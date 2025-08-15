@@ -1,4 +1,4 @@
-import { AppDataSource } from '../../../apps/api/src/config/database'
+import { AppDataSource } from '../../../../apps/api/src/config/database'
 import { Game } from '../entities/Game'
 import { Card } from '../entities/Card'
 import { Print } from '../entities/Print'
@@ -22,7 +22,7 @@ import {
   YugiohTransformer, 
   OnePieceTransformer 
 } from '../transformers'
-import { getImageQueue } from '../../../apps/api/src/config/infrastructure'
+import { getImageQueue } from '../../../../apps/api/src/config/infrastructure'
 
 export class ETLService {
   private circuitBreakers: Map<string, CircuitBreakerState> = new Map()
@@ -44,7 +44,6 @@ export class ETLService {
   /**
    * Start ETL job for a specific game
    */
-  @logTiming('etl')
   async startETLJob(
     gameCode: string, 
     jobType: ETLJobType,
@@ -129,6 +128,7 @@ export class ETLService {
           result.printsCreated += batchResult.printsCreated
           result.printsUpdated += batchResult.printsUpdated
           result.skusGenerated += batchResult.skusGenerated
+          result.imagesQueued += batchResult.imagesQueued
           
           // Update progress
           const processed = (i + 1) * this.config.batchSize
@@ -183,13 +183,15 @@ export class ETLService {
     printsCreated: number
     printsUpdated: number
     skusGenerated: number
+    imagesQueued: number
   }> {
     const result = {
       cardsCreated: 0,
       cardsUpdated: 0,
       printsCreated: 0,
       printsUpdated: 0,
-      skusGenerated: 0
+      skusGenerated: 0,
+      imagesQueued: 0
     }
 
     return await AppDataSource.transaction(async (manager) => {

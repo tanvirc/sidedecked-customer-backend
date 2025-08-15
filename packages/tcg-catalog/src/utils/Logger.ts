@@ -1,4 +1,4 @@
-import winston from 'winston'
+import * as winston from 'winston'
 
 export interface LogContext {
   gameCode?: string

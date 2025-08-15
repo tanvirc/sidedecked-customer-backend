@@ -181,19 +181,19 @@ export class ScryfallTransformer {
         defenseValue: this.parseNumericValue(canonicalCard.toughness),
 
         // Other game fields (null for MTG)
-        hp: null,
-        retreatCost: null,
+        hp: undefined,
+        retreatCost: undefined,
         energyTypes: [],
-        evolutionStage: null,
-        attribute: null,
-        levelRank: null,
-        attackValue: null,
-        defenseValueYugioh: null,
-        cost: null,
-        donCost: null,
-        lifeValue: null,
-        counterValue: null,
-        power: null,
+        evolutionStage: undefined,
+        attribute: undefined,
+        levelRank: undefined,
+        attackValue: undefined,
+        defenseValueYugioh: undefined,
+        cost: undefined,
+        donCost: undefined,
+        lifeValue: undefined,
+        counterValue: undefined,
+        power: undefined,
 
         prints: prints.map(print => this.transformPrint(print))
       }
@@ -218,7 +218,7 @@ export class ScryfallTransformer {
       isAlternateArt: scryfallCard.variation,
       isPromo: scryfallCard.promo,
       finish: scryfallCard.nonfoil ? 'normal' : 'foil',
-      variation: scryfallCard.variation ? 'alternate' : null,
+      variation: scryfallCard.variation ? 'alternate' : undefined,
       frame: scryfallCard.frame,
       borderColor: scryfallCard.border_color,
       

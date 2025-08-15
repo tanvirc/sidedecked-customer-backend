@@ -259,31 +259,31 @@ export class OnePieceTransformer {
         keywords: this.extractKeywords(canonicalCard),
 
         // One Piece specific fields
-        cost: canonicalCard.cost ? parseInt(canonicalCard.cost, 10) : null,
-        donCost: null, // Will be extracted from cost if needed
-        lifeValue: canonicalCard.life ? parseInt(canonicalCard.life, 10) : null,
-        counterValue: canonicalCard.counter ? parseInt(canonicalCard.counter, 10) : null,
-        power: canonicalCard.power ? parseInt(canonicalCard.power, 10) : null,
+        cost: canonicalCard.cost ? parseInt(canonicalCard.cost, 10) : undefined,
+        donCost: undefined, // Will be extracted from cost if needed
+        lifeValue: canonicalCard.life ? parseInt(canonicalCard.life, 10) : undefined,
+        counterValue: canonicalCard.counter ? parseInt(canonicalCard.counter, 10) : undefined,
+        power: canonicalCard.power ? parseInt(canonicalCard.power, 10) : undefined,
 
         // MTG fields (null for One Piece)
-        manaCost: null,
-        manaValue: null,
+        manaCost: undefined,
+        manaValue: undefined,
         colors: [],
         colorIdentity: [],
-        powerValue: null,
-        defenseValue: null,
+        powerValue: undefined,
+        defenseValue: undefined,
 
         // Pokemon fields (null for One Piece)
-        hp: null,
-        retreatCost: null,
+        hp: undefined,
+        retreatCost: undefined,
         energyTypes: [],
-        evolutionStage: null,
+        evolutionStage: undefined,
 
         // YuGiOh fields (null for One Piece)
         attribute: canonicalCard.attribute,
-        levelRank: null,
-        attackValue: null,
-        defenseValueYugioh: null,
+        levelRank: undefined,
+        attackValue: undefined,
+        defenseValueYugioh: undefined,
 
         prints: prints.map(print => this.transformPrint(print))
       }
@@ -308,12 +308,12 @@ export class OnePieceTransformer {
       isAlternateArt: false,
       isPromo: this.isPromo(onePieceCard.rarity),
       finish: 'normal',
-      variation: null,
+      variation: undefined,
       frame: 'normal',
       borderColor: 'black',
       
       externalIds: {
-        onePiece: onePieceCard.id
+        pokemonTcg: onePieceCard.id // Temporary: will be fixed when official API available
       },
 
       images: onePieceCard.image_url ? {

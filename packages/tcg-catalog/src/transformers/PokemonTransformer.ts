@@ -234,29 +234,29 @@ export class PokemonTransformer {
         keywords: this.extractKeywords(canonicalCard),
 
         // Pokemon specific fields
-        hp: canonicalCard.hp ? parseInt(canonicalCard.hp, 10) : null,
+        hp: canonicalCard.hp ? parseInt(canonicalCard.hp, 10) : undefined,
         retreatCost: canonicalCard.convertedRetreatCost,
         energyTypes: canonicalCard.types || [],
         evolutionStage: this.determineEvolutionStage(canonicalCard),
 
         // MTG fields (null for Pokemon)
-        manaCost: null,
-        manaValue: null,
+        manaCost: undefined,
+        manaValue: undefined,
         colors: [],
         colorIdentity: [],
-        powerValue: null,
-        defenseValue: null,
+        powerValue: undefined,
+        defenseValue: undefined,
 
         // Other game fields (null for Pokemon)
-        attribute: null,
-        levelRank: null,
-        attackValue: null,
-        defenseValueYugioh: null,
-        cost: null,
-        donCost: null,
-        lifeValue: null,
-        counterValue: null,
-        power: null,
+        attribute: undefined,
+        levelRank: undefined,
+        attackValue: undefined,
+        defenseValueYugioh: undefined,
+        cost: undefined,
+        donCost: undefined,
+        lifeValue: undefined,
+        counterValue: undefined,
+        power: undefined,
 
         prints: prints.map(print => this.transformPrint(print))
       }
@@ -281,7 +281,7 @@ export class PokemonTransformer {
       isAlternateArt: this.isAlternateArt(pokemonCard),
       isPromo: pokemonCard.set.id.includes('promo'),
       finish: 'normal',
-      variation: null,
+      variation: undefined,
       frame: 'normal',
       borderColor: 'black',
       
