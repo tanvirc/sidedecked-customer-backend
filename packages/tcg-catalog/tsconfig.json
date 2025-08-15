@@ -17,6 +17,6 @@
     "skipLibCheck": true,
     "noEmit": false
   },
-  "include": ["src/**/*", "../../apps/api/src/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }

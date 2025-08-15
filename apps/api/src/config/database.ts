@@ -71,8 +71,8 @@ export const AppDataSource = new DataSource({
     // PortfolioHolding,
     // PortfolioTransaction
   ],
-  migrations: ['src/migrations/*.ts'],
-  subscribers: ['src/subscribers/*.ts']
+  migrations: ['dist/migrations/*.js'],
+  subscribers: ['dist/subscribers/*.js']
 })
 
 export const initializeDatabase = async (): Promise<void> => {
