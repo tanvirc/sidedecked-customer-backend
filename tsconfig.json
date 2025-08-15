@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@sidedecked/types": ["packages/types/src"],
+      "@sidedecked/tcg-catalog": ["packages/tcg-catalog/src"],
+      "@sidedecked/deck-builder": ["packages/deck-builder/src"],
+      "@sidedecked/community": ["packages/community/src"],
+      "@sidedecked/pricing": ["packages/pricing/src"],
+      "@sidedecked/shared": ["packages/shared/src"]
+    }
+  },
+  "include": [
+    "packages/**/*",
+    "apps/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build"
+  ]
+}

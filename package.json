@@ -1,0 +1,31 @@
+{
+  "name": "sidedecked-customer-backend",
+  "version": "1.0.0",
+  "description": "SideDecked Customer Backend Monorepo - TCG Catalog, Deck Builder, Community, Pricing Intelligence",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "lerna run build",
+    "dev": "lerna run dev --parallel",
+    "test": "lerna run test",
+    "lint": "lerna run lint",
+    "typecheck": "lerna run typecheck",
+    "clean": "lerna run clean && lerna clean",
+    "bootstrap": "lerna bootstrap",
+    "migration:create": "cd apps/api && npm run migration:create",
+    "migration:run": "cd apps/api && npm run migration:run",
+    "migration:revert": "cd apps/api && npm run migration:revert"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "lerna": "^8.0.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

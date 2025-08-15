@@ -1,0 +1,137 @@
+import 'reflect-metadata'
+import express from 'express'
+import cors from 'cors'
+import helmet from 'helmet'
+import compression from 'compression'
+import rateLimit from 'express-rate-limit'
+
+import { config, validateConfig } from './config/env'
+import { initializeDatabase } from './config/database'
+import { setupRoutes } from './routes'
+import { errorHandler, notFoundHandler } from './middleware/errorHandler'
+import { requestLogger } from './middleware/requestLogger'
+
+async function createApp(): Promise<express.Application> {
+  const app = express()
+
+  // Security middleware
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false
+  }))
+
+  // CORS configuration
+  app.use(cors({
+    origin: config.CORS_ORIGINS,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  }))
+
+  // Compression
+  app.use(compression())
+
+  // Rate limiting
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // Limit each IP to 1000 requests per windowMs
+    message: 'Too many requests from this IP, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false
+  })
+  app.use(limiter)
+
+  // Body parsing
+  app.use(express.json({ limit: '10mb' }))
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+
+  // Request logging
+  app.use(requestLogger)
+
+  // Health check
+  app.get('/health', (req, res) => {
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version || '1.0.0',
+      environment: config.NODE_ENV,
+      uptime: process.uptime()
+    })
+  })
+
+  // API routes
+  app.use('/api', setupRoutes())
+
+  // 404 handler
+  app.use(notFoundHandler)
+
+  // Error handler (must be last)
+  app.use(errorHandler)
+
+  return app
+}
+
+async function startServer(): Promise<void> {
+  try {
+    // Validate configuration
+    validateConfig()
+    console.log('✅ Configuration validated')
+
+    // Initialize database
+    await initializeDatabase()
+    console.log('✅ Database initialized')
+
+    // Create Express app
+    const app = await createApp()
+    console.log('✅ Express app created')
+
+    // Start server
+    const server = app.listen(config.PORT, config.HOST, () => {
+      console.log(`
+🚀 SideDecked Customer Backend API Server Started
+
+   Environment: ${config.NODE_ENV}
+   Host:        ${config.HOST}
+   Port:        ${config.PORT}
+   URL:         http://${config.HOST}:${config.PORT}
+   Health:      http://${config.HOST}:${config.PORT}/health
+
+🗄️  Database:   ${config.DATABASE_URL.replace(/\/\/.*@/, '//***:***@')}
+🔍 Search:     ${config.MEILISEARCH_URL || 'Not configured'}
+📁 Storage:    ${config.MINIO_ENDPOINT || 'Not configured'}
+
+Ready to serve TCG catalog, deck builder, community, and pricing APIs!
+      `)
+    })
+
+    // Graceful shutdown
+    const gracefulShutdown = async (signal: string) => {
+      console.log(`\n⏹️  Received ${signal}. Starting graceful shutdown...`)
+      
+      server.close(async () => {
+        console.log('✅ HTTP server closed')
+        
+        // Close database connection
+        const { closeDatabase } = await import('./config/database')
+        await closeDatabase()
+        
+        console.log('✅ Graceful shutdown completed')
+        process.exit(0)
+      })
+    }
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+
+  } catch (error) {
+    console.error('❌ Failed to start server:', error)
+    process.exit(1)
+  }
+}
+
+// Start the server if this file is run directly
+if (require.main === module) {
+  startServer()
+}
+
+export { createApp, startServer }
