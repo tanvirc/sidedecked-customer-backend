@@ -39,15 +39,13 @@ export interface UniversalCard {
   name: string
   normalizedName: string
   primaryType: string
-  subtypes: string[]
+  subtypes?: string[]
   supertypes?: string[]
   powerValue?: number
   defenseValue?: number
   oracleText?: string
   flavorText?: string
-  keywords: string[]
-  gameId: string
-  gameCode: string
+  keywords?: string[]
 
   // Game-specific attributes
   manaCost?: string
@@ -99,7 +97,7 @@ export interface UniversalPrint {
   borderColor?: string
 
   // Images
-  images: {
+  images?: {
     small?: string
     normal?: string
     large?: string
@@ -108,7 +106,7 @@ export interface UniversalPrint {
   }
 
   // Pricing
-  prices: {
+  prices?: {
     usd?: number
     usdFoil?: number
     eur?: number
@@ -116,7 +114,7 @@ export interface UniversalPrint {
   }
 
   // External IDs
-  externalIds: {
+  externalIds?: {
     scryfall?: string
     tcgplayer?: string
     cardmarket?: string

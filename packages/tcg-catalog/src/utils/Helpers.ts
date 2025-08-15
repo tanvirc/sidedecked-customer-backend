@@ -13,6 +13,13 @@ export function normalizeName(name: string): string {
 }
 
 /**
+ * Generate a normalized name for card grouping (alias for normalizeName)
+ */
+export function generateNormalizedName(name: string): string {
+  return normalizeName(name)
+}
+
+/**
  * Generate SHA-256 hash for deduplication
  */
 export function generateHash(data: any): string {
@@ -119,7 +126,18 @@ export function parseSKU(sku: string): {
     return null
   }
 
-  const result = {
+  const result: {
+    gameCode: string
+    setCode: string
+    collectorNumber: string
+    languageCode: string
+    conditionCode: string
+    finishCode: string
+    gradeInfo?: {
+      company: string
+      grade: string
+    }
+  } = {
     gameCode: parts[0],
     setCode: parts[1],
     collectorNumber: parts[2],

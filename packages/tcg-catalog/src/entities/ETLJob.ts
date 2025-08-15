@@ -17,6 +17,9 @@ export enum ETLJobStatus {
 }
 
 export enum ETLJobType {
+  FULL = 'full',
+  INCREMENTAL = 'incremental', 
+  SETS = 'sets',
   FULL_SYNC = 'full_sync',
   INCREMENTAL_SYNC = 'incremental_sync',
   PRICE_UPDATE = 'price_update',

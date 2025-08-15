@@ -1,6 +1,7 @@
 import { Client as MinioClient } from 'minio'
 import { logger } from '../utils/Logger'
-import { ImageUploadResult } from '../types/ImageTypes'
+import { ImageUploadResult, ImageProcessingConfig } from '../types/ImageTypes'
+import { ImageProcessingService } from './ImageProcessingService'
 
 export interface StorageConfig {
   endpoint: string
@@ -16,6 +17,7 @@ export class StorageService {
   private client: MinioClient
   private bucket: string
   private cdnBaseUrl?: string
+  private imageProcessor?: ImageProcessingService
 
   constructor(config: StorageConfig, cdnBaseUrl?: string) {
     this.client = new MinioClient({
@@ -30,10 +32,23 @@ export class StorageService {
     this.bucket = config.bucket
     this.cdnBaseUrl = cdnBaseUrl
     
+    // Initialize image processor
+    const imageConfig: ImageProcessingConfig = {
+      minioEndpoint: config.endpoint,
+      minioPort: config.port || (config.useSSL ? 443 : 80),
+      minioUseSSL: config.useSSL ?? true,
+      minioAccessKey: config.accessKey,
+      minioSecretKey: config.secretKey,
+      minioBucketName: config.bucket,
+      cdnBaseUrl
+    }
+    this.imageProcessor = new ImageProcessingService(imageConfig)
+    
     logger.info('StorageService initialized', {
       endpoint: config.endpoint,
       bucket: config.bucket,
-      cdnEnabled: !!cdnBaseUrl
+      cdnEnabled: !!cdnBaseUrl,
+      imageProcessingEnabled: true
     })
   }
 
@@ -227,6 +242,129 @@ export class StorageService {
       logger.error('Failed to list images', error as Error, { prefix })
       throw error
     }
+  }
+
+  /**
+   * Process and upload image from URL with WebP conversion and multiple sizes
+   */
+  async processAndUploadImageFromUrl(
+    sourceUrl: string,
+    printId: string,
+    imageType: string = 'normal'
+  ): Promise<{
+    success: boolean
+    blurhash?: string
+    urls?: Record<string, string>
+    error?: string
+  }> {
+    if (!this.imageProcessor) {
+      throw new Error('Image processor not initialized')
+    }
+
+    try {
+      const result = await this.imageProcessor.processImageFromUrl(sourceUrl, printId, imageType)
+      
+      logger.info('Image processed and uploaded successfully', {
+        printId,
+        imageType,
+        sourceUrl,
+        success: result.success,
+        sizesProcessed: result.urls ? Object.keys(result.urls).length : 0
+      })
+
+      return {
+        success: result.success,
+        blurhash: result.blurhash,
+        urls: result.urls,
+        error: result.error
+      }
+    } catch (error) {
+      logger.error('Failed to process and upload image from URL', error as Error, {
+        sourceUrl,
+        printId,
+        imageType
+      })
+      
+      return {
+        success: false,
+        error: (error as Error).message
+      }
+    }
+  }
+
+  /**
+   * Process and upload image from buffer with WebP conversion and multiple sizes
+   */
+  async processAndUploadImageFromBuffer(
+    buffer: Buffer,
+    printId: string,
+    imageType: string = 'normal'
+  ): Promise<{
+    success: boolean
+    blurhash?: string
+    urls?: Record<string, string>
+    error?: string
+  }> {
+    if (!this.imageProcessor) {
+      throw new Error('Image processor not initialized')
+    }
+
+    try {
+      const result = await this.imageProcessor.processImage(buffer, printId, imageType)
+      
+      logger.info('Image processed and uploaded successfully', {
+        printId,
+        imageType,
+        bufferSize: buffer.length,
+        success: result.success,
+        sizesProcessed: result.urls ? Object.keys(result.urls).length : 0
+      })
+
+      return {
+        success: result.success,
+        blurhash: result.blurhash,
+        urls: result.urls,
+        error: result.error
+      }
+    } catch (error) {
+      logger.error('Failed to process and upload image from buffer', error as Error, {
+        printId,
+        imageType,
+        bufferSize: buffer.length
+      })
+      
+      return {
+        success: false,
+        error: (error as Error).message
+      }
+    }
+  }
+
+  /**
+   * Delete all processed images for a print
+   */
+  async deleteProcessedImages(printId: string, imageType: string): Promise<void> {
+    if (!this.imageProcessor) {
+      throw new Error('Image processor not initialized')
+    }
+
+    try {
+      await this.imageProcessor.deleteImage(printId, imageType)
+      logger.info('Processed images deleted successfully', { printId, imageType })
+    } catch (error) {
+      logger.error('Failed to delete processed images', error as Error, { printId, imageType })
+      throw error
+    }
+  }
+
+  /**
+   * Get image processor for advanced operations
+   */
+  getImageProcessor(): ImageProcessingService {
+    if (!this.imageProcessor) {
+      throw new Error('Image processor not initialized')
+    }
+    return this.imageProcessor
   }
 
   /**
