@@ -97,7 +97,7 @@ async function startServer(): Promise<void> {
    Health:      http://${config.HOST}:${config.PORT}/health
 
 🗄️  Database:   ${config.DATABASE_URL.replace(/\/\/.*@/, '//***:***@')}
-🔍 Search:     ${config.MEILISEARCH_URL || 'Not configured'}
+🔍 Search:     ${config.ALGOLIA_APP_ID ? 'Algolia configured' : 'Search not configured'}
 📁 Storage:    ${config.MINIO_ENDPOINT || 'Not configured'}
 
 Ready to serve TCG catalog, deck builder, community, and pricing APIs!

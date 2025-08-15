@@ -91,3 +91,17 @@ temp/
 
 # Redis dump file
 dump.rdb
+
+# TypeScript compilation artifacts (should only be in dist/)
+src/**/*.js
+src/**/*.d.ts
+src/**/*.js.map
+src/**/*.d.ts.map
+apps/*/src/**/*.js
+apps/*/src/**/*.d.ts
+apps/*/src/**/*.js.map
+apps/*/src/**/*.d.ts.map
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts.map

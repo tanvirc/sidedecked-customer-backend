@@ -13,6 +13,9 @@ export * from './services/ETLService'
 export * from './services/SearchService'
 export * from './services/StorageService'
 export * from './services/ImageProcessingService'
+export * from './services/CommerceIntegrationService'
+export * from './services/VendorMatchingService'
+export * from './services/SKUValidationService'
 
 // Transformers
 export * from './transformers'

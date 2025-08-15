@@ -25,9 +25,10 @@ import { PriceHistory } from '../entities/PriceHistory'
 import { MarketPrice } from '../entities/MarketPrice'
 import { PriceAlert } from '../entities/PriceAlert'
 import { PricePrediction } from '../entities/PricePrediction'
-import { Portfolio } from '../entities/Portfolio'
-import { PortfolioHolding } from '../entities/PortfolioHolding'
-import { PortfolioTransaction } from '../entities/PortfolioTransaction'
+// Note: Portfolio entities are part of the pricing intelligence module (future implementation)
+// import { Portfolio } from '../entities/Portfolio'
+// import { PortfolioHolding } from '../entities/PortfolioHolding'
+// import { PortfolioTransaction } from '../entities/PortfolioTransaction'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -64,10 +65,11 @@ export const AppDataSource = new DataSource({
     PriceHistory,
     MarketPrice,
     PriceAlert,
-    PricePrediction,
-    Portfolio,
-    PortfolioHolding,
-    PortfolioTransaction
+    PricePrediction
+    // Portfolio entities will be added in pricing intelligence module
+    // Portfolio,
+    // PortfolioHolding,
+    // PortfolioTransaction
   ],
   migrations: ['src/migrations/*.ts'],
   subscribers: ['src/subscribers/*.ts']
