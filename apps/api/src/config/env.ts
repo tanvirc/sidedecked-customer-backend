@@ -47,14 +47,12 @@ export const config = {
   ETL_RATE_LIMIT_DELAY: parseInt(process.env.ETL_RATE_LIMIT_DELAY || '1000'),
   ETL_CONCURRENT_JOBS: parseInt(process.env.ETL_CONCURRENT_JOBS || '2'),
   
-  // Search
-  MEILISEARCH_URL: process.env.MEILISEARCH_URL,
-  MEILISEARCH_API_KEY: process.env.MEILISEARCH_API_KEY,
-  MEILISEARCH_INDEX_PREFIX: process.env.MEILISEARCH_INDEX_PREFIX || 'sidedecked',
-  
-  // External APIs
+  // Search (Algolia)
   ALGOLIA_APP_ID: process.env.ALGOLIA_APP_ID,
   ALGOLIA_API_KEY: process.env.ALGOLIA_API_KEY,
+  ALGOLIA_SEARCH_KEY: process.env.ALGOLIA_SEARCH_KEY,
+  ALGOLIA_INDEX_CARDS: process.env.ALGOLIA_INDEX_CARDS || 'cards_catalog',
+  ALGOLIA_INDEX_MARKETPLACE: process.env.ALGOLIA_INDEX_MARKETPLACE || 'marketplace_products',
   
   // Commerce Backend Integration
   COMMERCE_BACKEND_URL: process.env.COMMERCE_BACKEND_URL || 'http://localhost:9000',
@@ -83,7 +81,8 @@ export const validateConfig = (): void => {
   const recommended = [
     'REDIS_URL',
     'MINIO_ENDPOINT',
-    'MEILISEARCH_URL'
+    'ALGOLIA_APP_ID',
+    'ALGOLIA_API_KEY'
   ]
   
   for (const key of recommended) {

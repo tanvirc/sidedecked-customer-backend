@@ -7,6 +7,7 @@ import { Card } from '../entities/Card'
 import { Print } from '../entities/Print'
 import { CardSet } from '../entities/CardSet'
 import { CatalogSKU } from '../entities/CatalogSKU'
+import { CardImage } from '../entities/CardImage'
 import { ETLJob } from '../entities/ETLJob'
 import { Deck } from '../entities/Deck'
 import { DeckCard } from '../entities/DeckCard'
@@ -40,6 +41,7 @@ export const AppDataSource = new DataSource({
     Print,
     CardSet,
     CatalogSKU,
+    CardImage,
     ETLJob,
     
     // Deck Builder
