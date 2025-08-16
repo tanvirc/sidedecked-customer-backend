@@ -104,12 +104,100 @@ export class CreateWishlistSystem20250816140000 implements MigrationInterface {
         await queryRunner.query(`CREATE INDEX "IDX_price_alerts_alert_type" ON "price_alerts" ("alert_type")`)
         await queryRunner.query(`CREATE INDEX "IDX_price_alerts_trigger_price" ON "price_alerts" ("trigger_price")`)
 
+        // Create market_prices table for price comparison and analysis
+        await queryRunner.query(`
+            CREATE TABLE "market_prices" (
+                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "catalog_sku" character varying(200) NOT NULL,
+                "source" character varying(100) NOT NULL,
+                "seller_id" character varying(200),
+                "seller_name" character varying(255),
+                "price" numeric(10,2) NOT NULL,
+                "shipping_cost" numeric(10,2) DEFAULT 0,
+                "condition" character varying(10) NOT NULL,
+                "language" character varying(10) NOT NULL DEFAULT 'EN',
+                "currency" character varying(3) NOT NULL DEFAULT 'USD',
+                "stock_quantity" integer DEFAULT 0,
+                "listing_url" text,
+                "image_url" text,
+                "is_available" boolean NOT NULL DEFAULT true,
+                "is_foil" boolean NOT NULL DEFAULT false,
+                "set_code" character varying(20),
+                "card_number" character varying(20),
+                "additional_data" jsonb,
+                "seller_rating" numeric(5,2),
+                "seller_feedback_count" integer,
+                "total_price" numeric(10,2) GENERATED ALWAYS AS ("price" + COALESCE("shipping_cost", 0)) STORED,
+                "last_scraped" TIMESTAMP NOT NULL DEFAULT now(),
+                "last_available" TIMESTAMP,
+                "created_at" TIMESTAMP NOT NULL DEFAULT now(),
+                "updated_at" TIMESTAMP NOT NULL DEFAULT now(),
+                CONSTRAINT "PK_market_prices" PRIMARY KEY ("id")
+            )
+        `)
+
+        // Create price_history table for price tracking over time
+        await queryRunner.query(`
+            CREATE TABLE "price_history" (
+                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "catalog_sku" character varying(200) NOT NULL,
+                "condition" character varying(10) NOT NULL,
+                "language" character varying(10) NOT NULL DEFAULT 'EN',
+                "lowest_price" numeric(10,2) NOT NULL,
+                "average_price" numeric(10,2) NOT NULL,
+                "highest_price" numeric(10,2) NOT NULL,
+                "market_price" numeric(10,2),
+                "listings_count" integer NOT NULL DEFAULT 0,
+                "in_stock_count" integer NOT NULL DEFAULT 0,
+                "price_sources" text[],
+                "currency" character varying(3) NOT NULL DEFAULT 'USD',
+                "aggregation_period" character varying(20) NOT NULL DEFAULT 'daily',
+                "recorded_at" TIMESTAMP NOT NULL,
+                "created_at" TIMESTAMP NOT NULL DEFAULT now(),
+                "updated_at" TIMESTAMP NOT NULL DEFAULT now(),
+                CONSTRAINT "PK_price_history" PRIMARY KEY ("id"),
+                CONSTRAINT "UQ_price_history_sku_condition_period" UNIQUE ("catalog_sku", "condition", "language", "aggregation_period", "recorded_at")
+            )
+        `)
+
+        // Create indexes for market_prices
+        await queryRunner.query(`CREATE INDEX "IDX_market_prices_catalog_sku" ON "market_prices" ("catalog_sku")`)
+        await queryRunner.query(`CREATE INDEX "IDX_market_prices_condition" ON "market_prices" ("condition")`)
+        await queryRunner.query(`CREATE INDEX "IDX_market_prices_language" ON "market_prices" ("language")`)
+        await queryRunner.query(`CREATE INDEX "IDX_market_prices_source" ON "market_prices" ("source")`)
+        await queryRunner.query(`CREATE INDEX "IDX_market_prices_price" ON "market_prices" ("price")`)
+        await queryRunner.query(`CREATE INDEX "IDX_market_prices_available" ON "market_prices" ("is_available")`)
+        await queryRunner.query(`CREATE INDEX "IDX_market_prices_scraped" ON "market_prices" ("last_scraped")`)
+
+        // Create indexes for price_history
+        await queryRunner.query(`CREATE INDEX "IDX_price_history_catalog_sku" ON "price_history" ("catalog_sku")`)
+        await queryRunner.query(`CREATE INDEX "IDX_price_history_condition" ON "price_history" ("condition")`)
+        await queryRunner.query(`CREATE INDEX "IDX_price_history_language" ON "price_history" ("language")`)
+        await queryRunner.query(`CREATE INDEX "IDX_price_history_recorded" ON "price_history" ("recorded_at")`)
+        await queryRunner.query(`CREATE INDEX "IDX_price_history_period" ON "price_history" ("aggregation_period")`)
+
         // Note: Default wishlists will be created when users first access the wishlist feature
         // No need to pre-populate since this is a fresh database without existing users
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
-        // Drop indexes
+        // Drop indexes for price_history
+        await queryRunner.query(`DROP INDEX "IDX_price_history_period"`)
+        await queryRunner.query(`DROP INDEX "IDX_price_history_recorded"`)
+        await queryRunner.query(`DROP INDEX "IDX_price_history_language"`)
+        await queryRunner.query(`DROP INDEX "IDX_price_history_condition"`)
+        await queryRunner.query(`DROP INDEX "IDX_price_history_catalog_sku"`)
+
+        // Drop indexes for market_prices
+        await queryRunner.query(`DROP INDEX "IDX_market_prices_scraped"`)
+        await queryRunner.query(`DROP INDEX "IDX_market_prices_available"`)
+        await queryRunner.query(`DROP INDEX "IDX_market_prices_price"`)
+        await queryRunner.query(`DROP INDEX "IDX_market_prices_source"`)
+        await queryRunner.query(`DROP INDEX "IDX_market_prices_language"`)
+        await queryRunner.query(`DROP INDEX "IDX_market_prices_condition"`)
+        await queryRunner.query(`DROP INDEX "IDX_market_prices_catalog_sku"`)
+
+        // Drop price indexes
         await queryRunner.query(`DROP INDEX "IDX_price_alerts_trigger_price"`)
         await queryRunner.query(`DROP INDEX "IDX_price_alerts_alert_type"`)
         await queryRunner.query(`DROP INDEX "IDX_price_alerts_status"`)
@@ -120,6 +208,8 @@ export class CreateWishlistSystem20250816140000 implements MigrationInterface {
         await queryRunner.query(`DROP INDEX "IDX_wishlists_user_id"`)
 
         // Drop tables
+        await queryRunner.query(`DROP TABLE "price_history"`)
+        await queryRunner.query(`DROP TABLE "market_prices"`)
         await queryRunner.query(`DROP TABLE "price_alerts"`)
         await queryRunner.query(`DROP TYPE "price_alert_status_enum"`)
         await queryRunner.query(`DROP TYPE "price_alert_type_enum"`)
