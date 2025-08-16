@@ -223,13 +223,20 @@ router.get('/cards/search', async (req, res) => {
 // Get card by ID
 router.get('/cards/:id', async (req, res) => {
   try {
-    const cardRepository = AppDataSource.getRepository(Card)
-    const card = await cardRepository.findOne({
-      where: { id: req.params.id },
-      relations: ['game', 'prints', 'prints.set']
-    })
-
-    if (!card) {
+    console.log('DEBUG: Fetching card for ID:', req.params.id)
+    
+    // Use raw SQL to avoid TypeORM relation issues
+    const cardQuery = `
+      SELECT c.*, g.code as game_code, g.name as game_name
+      FROM cards c
+      JOIN games g ON c.game_id = g.id
+      WHERE c.id = $1 AND c.deleted_at IS NULL
+    `
+    
+    const cards = await AppDataSource.query(cardQuery, [req.params.id])
+    console.log('DEBUG: Found cards:', cards.length)
+    
+    if (!cards || cards.length === 0) {
       return res.status(404).json({
         success: false,
         error: {
@@ -240,10 +247,34 @@ router.get('/cards/:id', async (req, res) => {
       })
     }
 
+    const card = cards[0]
+
+    // Format the card response
+    const cardResponse = {
+      id: card.id,
+      name: card.name,
+      gameId: card.game_id,
+      gameCode: card.game_code,
+      gameName: card.game_name,
+      oracleText: card.oracle_text,
+      flavorText: card.flavor_text,
+      manaCost: card.mana_cost,
+      manaValue: card.mana_value,
+      colors: card.colors,
+      powerValue: card.power_value,
+      defenseValue: card.defense_value,
+      hp: card.hp,
+      primaryType: card.primary_type,
+      subtypes: card.subtypes
+    }
+
+    console.log('DEBUG: Returning card:', card.name)
+    
     // Return just the card object for frontend compatibility
-    res.json(card)
+    res.json(cardResponse)
   } catch (error) {
     console.error('Error fetching card:', error)
+    console.error('Error stack:', (error as Error).stack)
     res.status(500).json({
       success: false,
       error: {
@@ -258,13 +289,20 @@ router.get('/cards/:id', async (req, res) => {
 // Get card details (enhanced with additional data)
 router.get('/cards/:id/details', async (req, res) => {
   try {
-    const cardRepository = AppDataSource.getRepository(Card)
-    const card = await cardRepository.findOne({
-      where: { id: req.params.id },
-      relations: ['game', 'prints', 'prints.set']
-    })
-
-    if (!card) {
+    console.log('DEBUG: Fetching card details for ID:', req.params.id)
+    
+    // Use raw SQL to avoid TypeORM relation issues
+    const cardQuery = `
+      SELECT c.*, g.code as game_code, g.name as game_name
+      FROM cards c
+      JOIN games g ON c.game_id = g.id
+      WHERE c.id = $1 AND c.deleted_at IS NULL
+    `
+    
+    const cards = await AppDataSource.query(cardQuery, [req.params.id])
+    console.log('DEBUG: Found cards:', cards.length)
+    
+    if (!cards || cards.length === 0) {
       return res.status(404).json({
         success: false,
         error: {
@@ -275,26 +313,84 @@ router.get('/cards/:id/details', async (req, res) => {
       })
     }
 
-    // Add format legality (mock for now)
-    const legality = {
-      standard: card.prints?.[0]?.isLegalStandard || false,
-      pioneer: card.prints?.[0]?.isLegalPioneer || false,
-      modern: card.prints?.[0]?.isLegalModern || false,
-      legacy: card.prints?.[0]?.isLegalLegacy || false,
-      vintage: card.prints?.[0]?.isLegalVintage || false,
-      commander: card.prints?.[0]?.isLegalCommander || false
+    const card = cards[0]
+
+    // Get prints for this card
+    const printsQuery = `
+      SELECT p.*, s.code as set_code, s.name as set_name
+      FROM prints p
+      LEFT JOIN card_sets s ON p.set_id = s.id
+      WHERE p.card_id = $1 AND p.deleted_at IS NULL
+    `
+    
+    const prints = await AppDataSource.query(printsQuery, [req.params.id])
+    console.log('DEBUG: Found prints:', prints.length)
+
+    // Format the response
+    const cardDetails = {
+      id: card.id,
+      name: card.name,
+      gameId: card.game_id,
+      gameCode: card.game_code,
+      gameName: card.game_name,
+      oracleText: card.oracle_text,
+      flavorText: card.flavor_text,
+      manaCost: card.mana_cost,
+      manaValue: card.mana_value,
+      colors: card.colors,
+      powerValue: card.power_value,
+      defenseValue: card.defense_value,
+      hp: card.hp,
+      primaryType: card.primary_type,
+      subtypes: card.subtypes,
+      // Add prints with proper mapping
+      prints: prints.map((print: any) => ({
+        id: print.id,
+        rarity: print.rarity,
+        artist: print.artist,
+        collectorNumber: print.collector_number,
+        language: print.language,
+        isLegalStandard: print.is_legal_standard || false,
+        isLegalPioneer: print.is_legal_pioneer || false,
+        isLegalModern: print.is_legal_modern || false,
+        isLegalLegacy: print.is_legal_legacy || false,
+        isLegalVintage: print.is_legal_vintage || false,
+        isLegalCommander: print.is_legal_commander || false,
+        imageSmall: print.image_small,
+        imageNormal: print.image_normal,
+        imageLarge: print.image_large,
+        set: print.set_code ? {
+          id: print.set_id,
+          code: print.set_code,
+          name: print.set_name
+        } : null
+      })),
+      // Add format legality (from first print)
+      legality: {
+        standard: prints[0]?.is_legal_standard || false,
+        pioneer: prints[0]?.is_legal_pioneer || false,
+        modern: prints[0]?.is_legal_modern || false,
+        legacy: prints[0]?.is_legal_legacy || false,
+        vintage: prints[0]?.is_legal_vintage || false,
+        commander: prints[0]?.is_legal_commander || false
+      },
+      // Add sets
+      sets: prints
+        .filter((print: any) => print.set_code)
+        .map((print: any) => ({
+          id: print.set_id,
+          code: print.set_code,
+          name: print.set_name
+        }))
     }
 
-    const sets = card.prints?.map(print => print.set).filter(Boolean) || []
-
+    console.log('DEBUG: Returning card details for:', card.name)
+    
     // Return card details directly for frontend compatibility
-    res.json({
-      ...card,
-      sets,
-      legality
-    })
+    res.json(cardDetails)
   } catch (error) {
     console.error('Error fetching card details:', error)
+    console.error('Error stack:', (error as Error).stack)
     res.status(500).json({
       success: false,
       error: {
