@@ -12,6 +12,7 @@ import { getServiceContainer } from './services/ServiceContainer'
 import { setupRoutes } from './routes'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler'
 import { requestLogger } from './middleware/requestLogger'
+import { jobScheduler } from './services/JobScheduler'
 
 async function createApp(): Promise<express.Application> {
   const app = express()
@@ -107,6 +108,10 @@ async function startServer(): Promise<void> {
     await serviceContainer.initializeServices()
     console.log('✅ Services initialized')
 
+    // Start background job scheduler
+    jobScheduler.start()
+    console.log('✅ Background job scheduler started')
+
     // Create Express app
     const app = await createApp()
     console.log('✅ Express app created')
@@ -136,6 +141,10 @@ Ready to serve TCG catalog, deck builder, community, and pricing APIs!
       
       server.close(async () => {
         console.log('✅ HTTP server closed')
+        
+        // Stop background job scheduler
+        jobScheduler.stop()
+        console.log('✅ Background job scheduler stopped')
         
         // Close services
         const serviceContainer = getServiceContainer()

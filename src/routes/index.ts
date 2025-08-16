@@ -1,6 +1,9 @@
 import { Router } from 'express'
 import commerceIntegrationRoutes from './commerce-integration'
 import catalogRoutes from './catalog'
+import wishlistRoutes from './wishlist'
+import pricingRoutes from './pricing'
+import sellersRoutes from './sellers'
 
 export const setupRoutes = (): Router => {
   const router = Router()
@@ -14,6 +17,7 @@ export const setupRoutes = (): Router => {
       documentation: '/api/docs',
       endpoints: {
         catalog: '/api/catalog',
+        wishlists: '/api/wishlists',
         decks: '/api/decks',
         community: '/api/community',
         pricing: '/api/pricing',
@@ -29,10 +33,18 @@ export const setupRoutes = (): Router => {
   // Catalog routes (games, cards, search) - mounted directly under /api
   router.use('/', catalogRoutes)
 
+  // Wishlist routes
+  router.use('/wishlists', wishlistRoutes)
+
+  // Pricing routes
+  router.use('/pricing', pricingRoutes)
+
+  // Seller routes
+  router.use('/sellers', sellersRoutes)
+
   // TODO: Add remaining route modules
   // router.use('/decks', deckRoutes)
   // router.use('/community', communityRoutes)
-  // router.use('/pricing', pricingRoutes)
   // router.use('/admin', adminRoutes)
 
   return router

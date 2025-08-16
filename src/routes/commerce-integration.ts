@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
 import { getInventorySyncService } from '../services/ServiceContainer'
+import { AppDataSource } from '../config/database'
 import { logger } from '../config/logger'
 
 const router = Router()
@@ -18,8 +19,8 @@ router.get('/', (req, res) => {
       'POST /inventory/check': 'Check inventory for multiple variants',
       'POST /inventory/invalidate': 'Invalidate inventory cache',
       'POST /inventory/prewarm': 'Pre-warm inventory cache',
-      'POST /match-product': 'Match vendor product to catalog (TODO)',
-      'POST /validate-sku': 'Validate single SKU (TODO)'
+      'POST /match-product': 'Match vendor product to catalog SKU',
+      'POST /validate-sku': 'Validate SKUs and get catalog enrichment data'
     }
   })
 })
@@ -270,26 +271,196 @@ router.post('/inventory/prewarm',
   }
 )
 
-// TODO: Implement remaining commerce integration endpoints as needed
-/*
-router.post('/match-product', async (req, res) => {
-  // Product matching implementation
-  res.status(501).json({
-    success: false,
-    error: 'Not implemented',
-    message: 'Product matching will be implemented in Phase 3'
-  })
-})
+// Product-to-Catalog SKU Matching Endpoints
 
-router.post('/validate-sku', async (req, res) => {
-  // SKU validation implementation  
-  res.status(501).json({
-    success: false,
-    error: 'Not implemented',
-    message: 'SKU validation will be implemented in Phase 3'
-  })
-})
-*/
+/**
+ * Match a product variant to catalog SKU for cart enrichment
+ */
+router.post('/match-product',
+  body('productId').isString().notEmpty().withMessage('Product ID is required'),
+  body('variantId').isString().notEmpty().withMessage('Variant ID is required'),
+  body('sku').optional().isString().withMessage('SKU must be a string'),
+  body('productName').optional().isString().withMessage('Product name must be a string'),
+  async (req, res) => {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: errors.array(),
+        timestamp: new Date().toISOString()
+      })
+    }
+
+    try {
+      const { productId, variantId, sku, productName } = req.body
+      
+      // Try to find catalog SKU match
+      let catalogMatch = null
+      
+      if (sku) {
+        // Direct SKU match
+        catalogMatch = await AppDataSource.query(
+          'SELECT sku.*, c.name as card_name, g.code as game_code FROM catalog_skus sku ' +
+          'LEFT JOIN prints p ON sku.print_id = p.id ' +
+          'LEFT JOIN cards c ON p.card_id = c.id ' +
+          'LEFT JOIN games g ON c.game_id = g.id ' +
+          'WHERE sku.sku = $1',
+          [sku]
+        )
+      }
+      
+      if (!catalogMatch || catalogMatch.length === 0) {
+        // Fuzzy match by product name
+        if (productName) {
+          catalogMatch = await AppDataSource.query(
+            'SELECT sku.*, c.name as card_name, g.code as game_code FROM catalog_skus sku ' +
+            'LEFT JOIN prints p ON sku.print_id = p.id ' +
+            'LEFT JOIN cards c ON p.card_id = c.id ' +
+            'LEFT JOIN games g ON c.game_id = g.id ' +
+            'WHERE c.name ILIKE $1 LIMIT 5',
+            [`%${productName}%`]
+          )
+        }
+      }
+      
+      const result = {
+        product_id: productId,
+        variant_id: variantId,
+        input_sku: sku,
+        matches: catalogMatch || [],
+        match_method: catalogMatch && catalogMatch.length > 0 ? 
+          (sku ? 'exact_sku' : 'fuzzy_name') : 'no_match',
+        confidence_score: catalogMatch && catalogMatch.length > 0 ? 
+          (sku ? 1.0 : 0.7) : 0.0
+      }
+      
+      res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString()
+      })
+    } catch (error) {
+      logger.error('Error matching product to catalog', error as Error)
+      res.status(500).json({
+        success: false,
+        error: 'Failed to match product to catalog',
+        message: (error as Error).message,
+        timestamp: new Date().toISOString()
+      })
+    }
+  }
+)
+
+/**
+ * Validate catalog SKU and get enrichment data
+ */
+router.post('/validate-sku',
+  body('skus').isArray({ min: 1, max: 20 }).withMessage('skus must be an array of 1-20 SKUs'),
+  body('skus.*').isString().notEmpty().withMessage('Each SKU must be a non-empty string'),
+  async (req, res) => {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: errors.array(),
+        timestamp: new Date().toISOString()
+      })
+    }
+
+    try {
+      const { skus } = req.body
+      
+      const results: Record<string, any> = {}
+      
+      for (const sku of skus) {
+        try {
+          const catalogData = await AppDataSource.query(
+            `SELECT 
+              cs.sku, cs.condition, cs.language, cs.finish,
+              c.id as card_id, c.name as card_name, c.oracle_text, c.flavor_text,
+              c.mana_cost, c.mana_value, c.colors, c.power_value, c.defense_value,
+              c.hp, c.primary_type, c.subtypes,
+              p.rarity, p.artist, p.image_normal, p.image_small,
+              s.name as set_name, s.code as set_code,
+              g.code as game_code, g.name as game_name
+            FROM catalog_skus cs
+            LEFT JOIN prints p ON cs.print_id = p.id
+            LEFT JOIN cards c ON p.card_id = c.id
+            LEFT JOIN card_sets s ON p.set_id = s.id
+            LEFT JOIN games g ON c.game_id = g.id
+            WHERE cs.sku = $1 AND cs.deleted_at IS NULL`,
+            [sku]
+          )
+          
+          if (catalogData && catalogData.length > 0) {
+            const data = catalogData[0]
+            results[sku] = {
+              valid: true,
+              catalog_sku: data.sku,
+              condition: data.condition,
+              language: data.language,
+              finish: data.finish,
+              card: {
+                id: data.card_id,
+                name: data.card_name,
+                oracle_text: data.oracle_text,
+                flavor_text: data.flavor_text,
+                mana_cost: data.mana_cost,
+                mana_value: data.mana_value,
+                colors: data.colors,
+                power_value: data.power_value,
+                defense_value: data.defense_value,
+                hp: data.hp,
+                primary_type: data.primary_type,
+                subtypes: data.subtypes
+              },
+              print: {
+                rarity: data.rarity,
+                artist: data.artist,
+                image_normal: data.image_normal,
+                image_small: data.image_small
+              },
+              set: {
+                name: data.set_name,
+                code: data.set_code
+              },
+              game: {
+                code: data.game_code,
+                name: data.game_name
+              }
+            }
+          } else {
+            results[sku] = {
+              valid: false,
+              error: 'SKU not found in catalog'
+            }
+          }
+        } catch (skuError) {
+          results[sku] = {
+            valid: false,
+            error: 'Failed to validate SKU'
+          }
+        }
+      }
+      
+      res.json({
+        success: true,
+        data: results,
+        timestamp: new Date().toISOString()
+      })
+    } catch (error) {
+      logger.error('Error validating SKUs', error as Error)
+      res.status(500).json({
+        success: false,
+        error: 'Failed to validate SKUs',
+        message: (error as Error).message,
+        timestamp: new Date().toISOString()
+      })
+    }
+  }
+)
 
 logger.info('Commerce integration routes loaded with inventory sync endpoints')
 
