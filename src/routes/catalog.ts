@@ -18,11 +18,8 @@ router.get('/games', async (req, res) => {
     const games = await AppDataSource.query('SELECT * FROM games ORDER BY name ASC')
     console.log('DEBUG: Found games:', games.length)
 
-    res.json({
-      success: true,
-      data: games,
-      count: games.length
-    })
+    // Return just the data array for frontend compatibility
+    res.json(games)
   } catch (error) {
     console.error('Error fetching games:', error)
     console.error('Error stack:', error.stack)
@@ -56,10 +53,8 @@ router.get('/games/:id', async (req, res) => {
       })
     }
 
-    res.json({
-      success: true,
-      data: game
-    })
+    // Return just the game object for frontend compatibility
+    res.json(game)
   } catch (error) {
     console.error('Error fetching game:', error)
     res.status(500).json({
@@ -92,10 +87,8 @@ router.get('/games/code/:code', async (req, res) => {
       })
     }
 
-    res.json({
-      success: true,
-      data: game
-    })
+    // Return just the game object for frontend compatibility
+    res.json(game)
   } catch (error) {
     console.error('Error fetching game by code:', error)
     res.status(500).json({
@@ -191,29 +184,27 @@ router.get('/cards/search', async (req, res) => {
       relevanceScore: 1.0
     }))
 
+    // Return search response directly for frontend compatibility
     res.json({
-      success: true,
-      data: {
-        hits,
-        pagination: {
-          currentPage: pageNum,
-          totalPages: Math.ceil(totalCount / limitNum),
-          totalResults: totalCount,
-          hasMore: offset + limitNum < totalCount
-        },
-        facets: {
-          games: [],
-          types: [],
-          rarities: [],
-          sets: [],
-          colors: [],
-          energyTypes: [],
-          attributes: [],
-          formats: []
-        },
-        processingTime: Date.now(),
-        searchId: `search_${Date.now()}`
-      }
+      hits,
+      pagination: {
+        currentPage: pageNum,
+        totalPages: Math.ceil(totalCount / limitNum),
+        totalResults: totalCount,
+        hasMore: offset + limitNum < totalCount
+      },
+      facets: {
+        games: [],
+        types: [],
+        rarities: [],
+        sets: [],
+        colors: [],
+        energyTypes: [],
+        attributes: [],
+        formats: []
+      },
+      processingTime: Date.now(),
+      searchId: `search_${Date.now()}`
     })
   } catch (error) {
     console.error('Error searching cards:', error)
@@ -249,10 +240,8 @@ router.get('/cards/:id', async (req, res) => {
       })
     }
 
-    res.json({
-      success: true,
-      data: card
-    })
+    // Return just the card object for frontend compatibility
+    res.json(card)
   } catch (error) {
     console.error('Error fetching card:', error)
     res.status(500).json({
@@ -298,13 +287,11 @@ router.get('/cards/:id/details', async (req, res) => {
 
     const sets = card.prints?.map(print => print.set).filter(Boolean) || []
 
+    // Return card details directly for frontend compatibility
     res.json({
-      success: true,
-      data: {
-        ...card,
-        sets,
-        legality
-      }
+      ...card,
+      sets,
+      legality
     })
   } catch (error) {
     console.error('Error fetching card details:', error)
@@ -346,10 +333,8 @@ router.get('/cards/suggestions', async (req, res) => {
       }
     ].filter(s => s.value.toLowerCase().includes((value as string).toLowerCase()))
 
-    res.json({
-      success: true,
-      data: suggestions
-    })
+    // Return just the suggestions array for frontend compatibility
+    res.json(suggestions)
   } catch (error) {
     console.error('Error fetching suggestions:', error)
     res.status(500).json({
@@ -393,10 +378,8 @@ router.get('/search/facets', async (req, res) => {
       ]
     }
 
-    res.json({
-      success: true,
-      data: facets
-    })
+    // Return just the facets object for frontend compatibility
+    res.json(facets)
   } catch (error) {
     console.error('Error fetching facets:', error)
     res.status(500).json({
@@ -437,10 +420,8 @@ router.get('/analytics/search', async (req, res) => {
       } : undefined
     }
 
-    res.json({
-      success: true,
-      data: analytics
-    })
+    // Return just the analytics object for frontend compatibility
+    res.json(analytics)
   } catch (error) {
     console.error('Error fetching search analytics:', error)
     res.status(500).json({
@@ -467,10 +448,8 @@ router.get('/analytics/search/trends', async (req, res) => {
       { query: 'Monkey D. Luffy', searchCount: 654, growthRate: 45.2, timeframe }
     ]
 
-    res.json({
-      success: true,
-      data: trends
-    })
+    // Return just the trends array for frontend compatibility
+    res.json(trends)
   } catch (error) {
     console.error('Error fetching search trends:', error)
     res.status(500).json({
@@ -498,10 +477,8 @@ router.get('/analytics/search/popular', async (req, res) => {
       { query: 'Sol Ring', count: 1321, changePercent: -0.5 }
     ]
 
-    res.json({
-      success: true,
-      data: popular
-    })
+    // Return just the popular searches array for frontend compatibility
+    res.json(popular)
   } catch (error) {
     console.error('Error fetching popular searches:', error)
     res.status(500).json({
