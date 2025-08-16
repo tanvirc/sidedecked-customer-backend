@@ -411,7 +411,7 @@ router.get('/search/facets', async (req, res) => {
 })
 
 // Get search analytics
-router.get('/search/analytics', async (req, res) => {
+router.get('/analytics/search', async (req, res) => {
   try {
     const { game, timeframe = 'week' } = req.query
 
@@ -455,7 +455,7 @@ router.get('/search/analytics', async (req, res) => {
 })
 
 // Get search trends
-router.get('/search/trends', async (req, res) => {
+router.get('/analytics/search/trends', async (req, res) => {
   try {
     const { game, timeframe = 'week' } = req.query
 
@@ -485,7 +485,7 @@ router.get('/search/trends', async (req, res) => {
 })
 
 // Get popular searches
-router.get('/search/popular', async (req, res) => {
+router.get('/analytics/search/popular', async (req, res) => {
   try {
     const { game, timeframe = 'week' } = req.query
 
@@ -516,12 +516,12 @@ router.get('/search/popular', async (req, res) => {
 })
 
 // Track search (for analytics)
-router.post('/search/track', async (req, res) => {
+router.post('/analytics/search', async (req, res) => {
   try {
-    const { query, resultsCount, searchId } = req.body
+    const { query, resultCount, searchId, timestamp } = req.body
 
     // Mock tracking for development
-    console.log('Search tracked:', { query, resultsCount, searchId })
+    console.log('Search tracked:', { query, resultCount, searchId, timestamp })
 
     res.json({
       success: true,
@@ -541,13 +541,12 @@ router.post('/search/track', async (req, res) => {
 })
 
 // Track card view (for analytics)
-router.post('/cards/:id/view', async (req, res) => {
+router.post('/analytics/card-view', async (req, res) => {
   try {
-    const { id } = req.params
-    const { source } = req.body
+    const { cardId, source, searchQuery, referrer, timestamp } = req.body
 
     // Mock tracking for development
-    console.log('Card view tracked:', { cardId: id, source })
+    console.log('Card view tracked:', { cardId, source, searchQuery, referrer, timestamp })
 
     res.json({
       success: true,
