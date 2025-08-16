@@ -104,14 +104,8 @@ export class CreateWishlistSystem20250816140000 implements MigrationInterface {
         await queryRunner.query(`CREATE INDEX "IDX_price_alerts_alert_type" ON "price_alerts" ("alert_type")`)
         await queryRunner.query(`CREATE INDEX "IDX_price_alerts_trigger_price" ON "price_alerts" ("trigger_price")`)
 
-        // Create default wishlist for existing users (if any)
-        await queryRunner.query(`
-            INSERT INTO "wishlists" ("user_id", "name", "description")
-            SELECT DISTINCT "customer_id" as "user_id", 'My Wishlist', 'Default wishlist'
-            FROM "user_profiles"
-            WHERE "customer_id" IS NOT NULL
-            ON CONFLICT ("user_id", "name") DO NOTHING
-        `)
+        // Note: Default wishlists will be created when users first access the wishlist feature
+        // No need to pre-populate since this is a fresh database without existing users
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
