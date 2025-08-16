@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import commerceIntegrationRoutes from './commerce-integration'
+import catalogRoutes from './catalog'
 
 export const setupRoutes = (): Router => {
   const router = Router()
@@ -25,8 +26,10 @@ export const setupRoutes = (): Router => {
   // Commerce integration routes (connects catalog to MercurJS)
   router.use('/commerce', commerceIntegrationRoutes)
 
+  // Catalog routes (games, cards, search) - mounted directly under /api
+  router.use('/', catalogRoutes)
+
   // TODO: Add remaining route modules
-  // router.use('/catalog', catalogRoutes)
   // router.use('/decks', deckRoutes)
   // router.use('/community', communityRoutes)
   // router.use('/pricing', pricingRoutes)
