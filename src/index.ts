@@ -7,6 +7,8 @@ import rateLimit from 'express-rate-limit'
 
 import { config, validateConfig } from './config/env'
 import { initializeDatabase } from './config/database'
+import { initializeInfrastructure, closeInfrastructure } from './config/infrastructure'
+import { getServiceContainer } from './services/ServiceContainer'
 import { setupRoutes } from './routes'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler'
 import { requestLogger } from './middleware/requestLogger'
@@ -49,14 +51,29 @@ async function createApp(): Promise<express.Application> {
   app.use(requestLogger)
 
   // Health check
-  app.get('/health', (req, res) => {
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      version: process.env.npm_package_version || '1.0.0',
-      environment: config.NODE_ENV,
-      uptime: process.uptime()
-    })
+  app.get('/health', async (req, res) => {
+    try {
+      const serviceContainer = getServiceContainer()
+      const serviceHealth = await serviceContainer.healthCheckAll()
+      
+      res.json({
+        status: serviceHealth.healthy ? 'healthy' : 'degraded',
+        timestamp: new Date().toISOString(),
+        version: process.env.npm_package_version || '1.0.0',
+        environment: config.NODE_ENV,
+        uptime: process.uptime(),
+        services: serviceHealth.services
+      })
+    } catch (error) {
+      res.status(503).json({
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        version: process.env.npm_package_version || '1.0.0',
+        environment: config.NODE_ENV,
+        uptime: process.uptime(),
+        error: (error as Error).message
+      })
+    }
   })
 
   // API routes
@@ -80,6 +97,15 @@ async function startServer(): Promise<void> {
     // Initialize database
     await initializeDatabase()
     console.log('✅ Database initialized')
+
+    // Initialize infrastructure (Redis, Algolia, etc.)
+    await initializeInfrastructure()
+    console.log('✅ Infrastructure initialized')
+
+    // Initialize services
+    const serviceContainer = getServiceContainer()
+    await serviceContainer.initializeServices()
+    console.log('✅ Services initialized')
 
     // Create Express app
     const app = await createApp()
@@ -110,6 +136,13 @@ Ready to serve TCG catalog, deck builder, community, and pricing APIs!
       
       server.close(async () => {
         console.log('✅ HTTP server closed')
+        
+        // Close services
+        const serviceContainer = getServiceContainer()
+        await serviceContainer.shutdown()
+        
+        // Close infrastructure
+        await closeInfrastructure()
         
         // Close database connection
         const { closeDatabase } = await import('./config/database')
