@@ -17,6 +17,11 @@ import { jobScheduler } from './services/JobScheduler'
 async function createApp(): Promise<express.Application> {
   const app = express()
 
+  // Trust proxy (required for Railway and other reverse proxy deployments)
+  if (config.NODE_ENV === 'production') {
+    app.set('trust proxy', true)
+  }
+
   // Security middleware
   app.use(helmet({
     contentSecurityPolicy: false,
