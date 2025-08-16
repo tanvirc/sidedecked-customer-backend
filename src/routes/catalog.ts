@@ -22,7 +22,7 @@ router.get('/games', async (req, res) => {
     res.json(games)
   } catch (error) {
     console.error('Error fetching games:', error)
-    console.error('Error stack:', error.stack)
+    console.error('Error stack:', (error as Error).stack)
     res.status(500).json({
       success: false,
       error: {
@@ -170,7 +170,7 @@ router.get('/cards/search', async (req, res) => {
     console.log('DEBUG: Found cards:', cards.length, 'Total:', totalCount)
 
     // Convert to search results format
-    const hits = cards.map(card => ({
+    const hits = cards.map((card: any) => ({
       card: {
         id: card.id,
         name: card.name,
@@ -208,7 +208,7 @@ router.get('/cards/search', async (req, res) => {
     })
   } catch (error) {
     console.error('Error searching cards:', error)
-    console.error('Error stack:', error.stack)
+    console.error('Error stack:', (error as Error).stack)
     res.status(500).json({
       success: false,
       error: {
