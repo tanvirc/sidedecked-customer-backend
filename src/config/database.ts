@@ -25,6 +25,8 @@ import { PriceHistory } from '../entities/PriceHistory'
 import { MarketPrice } from '../entities/MarketPrice'
 import { PriceAlert } from '../entities/PriceAlert'
 import { PricePrediction } from '../entities/PricePrediction'
+import { Wishlist } from '../entities/Wishlist'
+import { WishlistItem } from '../entities/WishlistItem'
 // Note: Portfolio entities are part of the pricing intelligence module (future implementation)
 // import { Portfolio } from '../entities/Portfolio'
 // import { PortfolioHolding } from '../entities/PortfolioHolding'
@@ -65,7 +67,11 @@ export const AppDataSource = new DataSource({
     PriceHistory,
     MarketPrice,
     PriceAlert,
-    PricePrediction
+    PricePrediction,
+    
+    // Wishlist
+    Wishlist,
+    WishlistItem
     // Portfolio entities will be added in pricing intelligence module
     // Portfolio,
     // PortfolioHolding,
