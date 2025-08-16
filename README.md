@@ -11,27 +11,31 @@ The SideDecked project uses a **split-brain architecture** with strict separatio
 - **storefront** → Consumes both backend APIs for complete customer experience
 - **vendorpanel** → Connects to backend for vendor management
 
-## Packages
+## Structure
 
-### Core Data Packages
-- **@sidedecked/types** - Shared TypeScript definitions
-- **@sidedecked/tcg-catalog** - Universal TCG card database and ETL
-- **@sidedecked/deck-builder** - Deck management and validation
-- **@sidedecked/community** - User profiles, social features
-- **@sidedecked/pricing** - Price intelligence and market data
-- **@sidedecked/shared** - Common utilities and helpers
+### Main Application
+- **src/** - Customer backend API server (Express/TypeORM)
+  - **config/** - Database and infrastructure configuration
+  - **entities/** - TypeORM entity definitions
+  - **routes/** - API endpoints and controllers
+  - **services/** - Business logic and integrations
+  - **middleware/** - Express middleware
+  - **migrations/** - Database schema migrations
+  - **scripts/** - ETL and utility scripts
 
-### Applications
-- **apps/api** - Customer backend API server
+### Shared Packages
+- **packages/types** - Shared TypeScript definitions
+- **packages/tcg-catalog** - Universal TCG card database and ETL
+- **packages/deck-builder** - Deck management and validation
+- **packages/community** - User profiles, social features
+- **packages/pricing** - Price intelligence and market data
+- **packages/shared** - Common utilities and helpers
 
 ## Quick Start
 
 ```bash
 # Install dependencies
 npm install
-
-# Bootstrap packages
-npm run bootstrap
 
 # Setup environment
 cp .env.template .env
@@ -124,7 +128,8 @@ const enrichedProduct = { ...product, cardDetails }
 See `.env.template` for all required environment variables. Key configurations:
 
 - **DATABASE_URL** - PostgreSQL connection for sidedecked-db
-- **COMMERCE_BACKEND_URL** - Connection to MercurJS backend
+- **BACKEND_API_URL** - Connection to MercurJS backend
+- **API_PORT** - Server port (default: 7000)
 - **ETL APIs** - Scryfall, Pokemon TCG, YuGiOh API keys
 - **MinIO** - Image storage configuration
 - **Meilisearch** - Search engine configuration

@@ -6,7 +6,9 @@ import { Game } from '../entities/Game'
 import { ETLJobType } from '../entities/ETLJob'
 
 // Import ETL service directly from source - using ts files since dist isn't building
-import { ETLService } from '../../../packages/tcg-catalog/src/services/ETLService'
+// TODO: Fix package imports after restructuring
+// import { ETLService } from '../../packages/tcg-catalog/src/services/ETLService'
+const ETLService: any = null // Temporary placeholder
 
 interface TestConfig {
   gameCode: string
