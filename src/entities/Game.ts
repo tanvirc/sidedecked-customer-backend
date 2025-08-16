@@ -24,66 +24,69 @@ export class Game {
   @Column({ type: 'varchar', length: 100 })
   name: string
 
-  @Column({ type: 'varchar', length: 100 })
+  @Column({ type: 'varchar', length: 100, name: 'display_name' })
   displayName: string
 
   // Game mechanics flags
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'has_colors' })
   hasColors: boolean // MTG
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'has_energy_types' })
   hasEnergyTypes: boolean // Pokemon
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'has_attributes' })
   hasAttributes: boolean // YuGiOh
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'has_levels' })
   hasLevels: boolean // YuGiOh, MTG (Planeswalkers)
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'has_power_toughness' })
+  hasPowerToughness: boolean // MTG, YuGiOh, One Piece
+
+  @Column({ type: 'boolean', default: false, name: 'has_evolution' })
   hasEvolution: boolean // Pokemon
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'has_life_system' })
   hasLifeSystem: boolean // One Piece
 
   // Resource systems
-  @Column({ type: 'varchar', length: 50, nullable: true })
+  @Column({ type: 'varchar', length: 50, nullable: true, name: 'resource_type' })
   resourceType: string // mana, energy, don, none
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, name: 'resource_colors' })
   resourceColors: any // ["W","U","B","R","G"] for MTG
 
   // API configuration
-  @Column({ type: 'varchar', length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'api_provider' })
   apiProvider: string // scryfall, pokemon_tcg, ygoprodeck, onepiece_tcg
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'api_endpoint' })
   apiEndpoint: string
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'api_key_required' })
   apiKeyRequired: boolean
 
-  @Column({ type: 'interval', default: '24 hours' })
+  @Column({ type: 'interval', default: '24 hours', name: 'update_frequency' })
   updateFrequency: string
 
   // ETL configuration
-  @Column({ type: 'boolean', default: true })
+  @Column({ type: 'boolean', default: true, name: 'etl_enabled' })
   etlEnabled: boolean
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'etl_source' })
   etlSource: string
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, name: 'last_etl_run' })
   lastEtlRun: Date
 
   // Display configuration
-  @Column({ type: 'varchar', length: 500, nullable: true })
+  @Column({ type: 'varchar', length: 500, nullable: true, name: 'card_back_image' })
   cardBackImage: string
 
-  @Column({ type: 'varchar', length: 20, nullable: true })
+  @Column({ type: 'varchar', length: 20, nullable: true, name: 'primary_color' })
   primaryColor: string
 
-  @Column({ type: 'varchar', length: 500, nullable: true })
+  @Column({ type: 'varchar', length: 500, nullable: true, name: 'logo_url' })
   logoUrl: string
 
   // Relations
