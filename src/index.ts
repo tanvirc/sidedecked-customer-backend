@@ -19,7 +19,8 @@ async function createApp(): Promise<express.Application> {
 
   // Trust proxy (required for Railway and other reverse proxy deployments)
   if (config.NODE_ENV === 'production') {
-    app.set('trust proxy', true)
+    // Railway uses a single hop reverse proxy
+    app.set('trust proxy', 1)
   }
 
   // Security middleware
