@@ -3,6 +3,7 @@ import { body, param, query, validationResult } from 'express-validator'
 import { getInventorySyncService } from '../services/ServiceContainer'
 import { AppDataSource } from '../config/database'
 import { logger } from '../config/logger'
+import { CatalogSKU } from '../entities/CatalogSKU'
 
 const router = Router()
 
@@ -299,28 +300,38 @@ router.post('/match-product',
       let catalogMatch = null
       
       if (sku) {
-        // Direct SKU match
-        catalogMatch = await AppDataSource.query(
-          'SELECT sku.*, c.name as card_name, g.code as game_code FROM catalog_skus sku ' +
-          'LEFT JOIN prints p ON sku.print_id = p.id ' +
-          'LEFT JOIN cards c ON p.card_id = c.id ' +
-          'LEFT JOIN games g ON c.game_id = g.id ' +
-          'WHERE sku.sku = $1',
-          [sku]
-        )
+        // Direct SKU match using TypeORM with proper relationships
+        const catalogSKURepository = AppDataSource.getRepository(CatalogSKU)
+        const skuResults = await catalogSKURepository.find({
+          where: { sku: sku },
+          relations: ['print', 'print.card', 'print.card.game']
+        })
+        
+        catalogMatch = skuResults.map(skuEntity => ({
+          ...skuEntity,
+          card_name: skuEntity.print?.card?.name,
+          game_code: skuEntity.print?.card?.game?.code
+        }))
       }
       
       if (!catalogMatch || catalogMatch.length === 0) {
-        // Fuzzy match by product name
+        // Fuzzy match by product name using TypeORM QueryBuilder
         if (productName) {
-          catalogMatch = await AppDataSource.query(
-            'SELECT sku.*, c.name as card_name, g.code as game_code FROM catalog_skus sku ' +
-            'LEFT JOIN prints p ON sku.print_id = p.id ' +
-            'LEFT JOIN cards c ON p.card_id = c.id ' +
-            'LEFT JOIN games g ON c.game_id = g.id ' +
-            'WHERE c.name ILIKE $1 LIMIT 5',
-            [`%${productName}%`]
-          )
+          const catalogSKURepository = AppDataSource.getRepository(CatalogSKU)
+          const skuResults = await catalogSKURepository
+            .createQueryBuilder('sku')
+            .leftJoinAndSelect('sku.print', 'print')
+            .leftJoinAndSelect('print.card', 'card')
+            .leftJoinAndSelect('card.game', 'game')
+            .where('card.name ILIKE :productName', { productName: `%${productName}%` })
+            .limit(5)
+            .getMany()
+          
+          catalogMatch = skuResults.map(skuEntity => ({
+            ...skuEntity,
+            card_name: skuEntity.print?.card?.name,
+            game_code: skuEntity.print?.card?.game?.code
+          }))
         }
       }
       
@@ -376,23 +387,48 @@ router.post('/validate-sku',
       
       for (const sku of skus) {
         try {
-          const catalogData = await AppDataSource.query(
-            `SELECT 
-              cs.sku, cs.condition, cs.language, cs.finish,
-              c.id as card_id, c.name as card_name, c.oracle_text, c.flavor_text,
-              c.mana_cost, c.mana_value, c.colors, c.power_value, c.defense_value,
-              c.hp, c.primary_type, c.subtypes,
-              p.rarity, p.artist, p.image_normal, p.image_small,
-              s.name as set_name, s.code as set_code,
-              g.code as game_code, g.name as game_name
-            FROM catalog_skus cs
-            LEFT JOIN prints p ON cs.print_id = p.id
-            LEFT JOIN cards c ON p.card_id = c.id
-            LEFT JOIN card_sets s ON p.set_id = s.id
-            LEFT JOIN games g ON c.game_id = g.id
-            WHERE cs.sku = $1 AND cs.deleted_at IS NULL`,
-            [sku]
-          )
+          // Use TypeORM with proper entity relationships and correct field mappings
+          const catalogSKURepository = AppDataSource.getRepository(CatalogSKU)
+          const catalogResults = await catalogSKURepository.find({
+            where: { sku: sku },
+            relations: ['print', 'print.card', 'print.set', 'print.card.game']
+          })
+          
+          const catalogData = catalogResults.map(skuEntity => ({
+            // SKU fields
+            sku: skuEntity.sku,
+            condition: skuEntity.conditionCode,
+            language: skuEntity.languageCode,
+            finish: skuEntity.finishCode,
+            
+            // Card fields (using correct camelCase property names)
+            card_id: skuEntity.print?.card?.id,
+            card_name: skuEntity.print?.card?.name,
+            oracle_text: skuEntity.print?.card?.oracleText,
+            flavor_text: skuEntity.print?.card?.flavorText,
+            mana_cost: skuEntity.print?.card?.manaCost,
+            mana_value: skuEntity.print?.card?.manaValue,
+            colors: skuEntity.print?.card?.colors,
+            power_value: skuEntity.print?.card?.powerValue,
+            defense_value: skuEntity.print?.card?.defenseValue,
+            hp: skuEntity.print?.card?.hp,
+            primary_type: skuEntity.print?.card?.primaryType,
+            subtypes: skuEntity.print?.card?.subtypes,
+            
+            // Print fields
+            rarity: skuEntity.print?.rarity,
+            artist: skuEntity.print?.artist,
+            image_normal: skuEntity.print?.imageNormal,
+            image_small: skuEntity.print?.imageSmall,
+            
+            // Set fields
+            set_name: skuEntity.print?.set?.name,
+            set_code: skuEntity.print?.set?.code,
+            
+            // Game fields
+            game_code: skuEntity.print?.card?.game?.code,
+            game_name: skuEntity.print?.card?.game?.name
+          }))
           
           if (catalogData && catalogData.length > 0) {
             const data = catalogData[0]
