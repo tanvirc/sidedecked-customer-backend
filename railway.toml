@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "npm run build && npm run migration:run && node fix-pricing-tables.js && node dist/index.js"
+startCommand = "npm run build && node dist/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
