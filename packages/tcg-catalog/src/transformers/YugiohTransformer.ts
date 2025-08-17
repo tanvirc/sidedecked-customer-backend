@@ -120,14 +120,14 @@ export class YugiohTransformer {
 
   private buildParams(jobType: ETLJobType, limit?: number): Record<string, any> {
     const params: Record<string, any> = {
-      misc: 'yes', // Include misc info like release date
-      format: 'tcg' // TCG format only
+      // Note: 'misc' and 'format' are not valid YGOProdeck API parameters
+      // Using only documented parameters to avoid 400 errors
     }
 
     // For small limits, we can use more specific filters to reduce API response size
     if (limit && limit <= 100) {
       // For small limits, fetch only monster cards (most common card type)
-      params.type = 'Monster'
+      params.type = 'Normal Monster'
       return params
     }
 
@@ -138,28 +138,30 @@ export class YugiohTransformer {
         break
       case ETLJobType.INCREMENTAL:
       case ETLJobType.INCREMENTAL_SYNC:
-        // For testing with limits, use broader query. For production, use date-based filtering
+        // For testing with limits, use broader query
         if (limit && limit <= 1000) {
-          // Use more specific filter for testing
-          params.type = 'Monster'
+          // Use specific filter for testing
+          params.type = 'Effect Monster'
         }
-        // YGOPro doesn't support date filtering, so we'll get all and filter later
-        // This is a limitation of their API
+        // Note: YGOProdeck API doesn't support date filtering
+        // For incremental updates, we would need to implement client-side filtering
         break
       case ETLJobType.SETS:
-        // Get cards from recent sets only
-        params.startdate = '2023-01-01'
+        // Use archetype filter as a proxy for recent cards
+        params.archetype = 'Blue-Eyes'
         break
       case ETLJobType.BANLIST_UPDATE:
-        // For banlist updates, get all cards (YGOPro API limitation)
-        params.banlist = 'tcg'
+        // For banlist updates, get popular archetype cards
+        params.archetype = 'Dark Magician'
         break
       default:
-        // Default to recent sets, but use monster filter for small limits
+        // Default to monster cards for small limits
         if (limit && limit <= 100) {
-          params.type = 'Monster'
-        } else {
-          params.startdate = '2023-01-01'
+          params.type = 'Effect Monster'
+        }
+        // For larger queries, use a popular archetype
+        else {
+          params.archetype = 'Blue-Eyes'
         }
         break
     }

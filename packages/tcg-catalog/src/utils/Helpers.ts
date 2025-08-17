@@ -89,6 +89,11 @@ export function formatSKU(components: {
     gradeInfo
   } = components
 
+  // Validate all required fields are present and not null/undefined
+  if (!gameCode || !setCode || !collectorNumber || !languageCode || !conditionCode || !finishCode) {
+    throw new Error(`formatSKU: Missing required fields. Got: gameCode=${gameCode}, setCode=${setCode}, collectorNumber=${collectorNumber}, languageCode=${languageCode}, conditionCode=${conditionCode}, finishCode=${finishCode}`)
+  }
+
   let sku = [
     gameCode.toUpperCase(),
     setCode.toUpperCase(),

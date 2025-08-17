@@ -288,7 +288,7 @@ export class ETLService {
             }
 
             // Generate SKUs
-            const skus = await this.generateSKUsForPrint(print, manager)
+            const skus = await this.generateSKUsForPrint(print, manager, game.code, printData.setCode, printData.collectorNumber)
             result.skusGenerated += skus.length
             cardSkusCreated += skus.length
 
@@ -470,7 +470,7 @@ export class ETLService {
   /**
    * Generate SKUs for all condition/language combinations
    */
-  private async generateSKUsForPrint(print: any, manager: any): Promise<CatalogSKU[]> {
+  private async generateSKUsForPrint(print: any, manager: any, gameCode: string, setCode: string, collectorNumber: string): Promise<CatalogSKU[]> {
     const conditions = ['NM', 'LP', 'MP', 'HP', 'DMG']
     const languages = ['EN'] // Start with English, expand later
     const finishes = print.isFoilAvailable ? ['NORMAL', 'FOIL'] : ['NORMAL']
@@ -481,9 +481,9 @@ export class ETLService {
       for (const language of languages) {
         for (const finish of finishes) {
           const sku = formatSKU({
-            gameCode: print.card?.game?.code || print.gameCode,
-            setCode: print.set?.code || print.setCode,
-            collectorNumber: print.collectorNumber,
+            gameCode: gameCode,
+            setCode: setCode,
+            collectorNumber: collectorNumber,
             languageCode: language,
             conditionCode: condition,
             finishCode: finish
@@ -492,9 +492,9 @@ export class ETLService {
           const catalogSku = manager.create(CatalogSKU, {
             printId: print.id,
             sku,
-            gameCode: print.card?.game?.code || print.gameCode,
-            setCode: print.set?.code || print.setCode,
-            collectorNumber: print.collectorNumber,
+            gameCode: gameCode,
+            setCode: setCode,
+            collectorNumber: collectorNumber,
             languageCode: language,
             conditionCode: condition,
             finishCode: finish,

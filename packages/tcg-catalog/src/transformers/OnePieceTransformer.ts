@@ -62,27 +62,44 @@ export class OnePieceTransformer {
     logger.info('Starting One Piece TCG data fetch', { gameCode: game.code, jobType, limit })
 
     try {
-      // For now, we'll return mock data since there's no official API
-      // This can be replaced when an official API becomes available
-      let mockCards = this.generateMockCards(jobType, limit)
-      
-      // Log the query being used
-      logger.apiCall('onepiece_tcg', 'mock_data', 'GET')
-      logger.info(`🔍 One Piece Query: mock data generation${limit ? ` (limit: ${limit})` : ''}`)
+      // First try to fetch from real API
+      try {
+        logger.info('🔍 Attempting One Piece TCG API fetch')
+        const apiCards = await this.fetchCardsFromAPI(jobType, limit)
+        
+        logger.info('✅ Successfully fetched from One Piece TCG API', {
+          gameCode: game.code,
+          totalCards: apiCards.length
+        })
+        
+        return this.transformToUniversal(apiCards)
+        
+      } catch (apiError) {
+        logger.warn('One Piece TCG API not available, falling back to mock data', {
+          error: (apiError as Error).message
+        })
+        
+        // Fall back to mock data when API is unavailable
+        let mockCards = this.generateMockCards(jobType, limit)
+        
+        // Log the query being used
+        logger.apiCall('onepiece_tcg', 'mock_data_fallback', 'GET')
+        logger.info(`🔍 One Piece Query: mock data generation (fallback)${limit ? ` (limit: ${limit})` : ''}`)
 
-      // Apply limit if specified (for mock data)
-      if (limit && mockCards.length > limit) {
-        mockCards = mockCards.slice(0, limit)
-        logger.info(`✅ Trimmed mock data to limit of ${limit} cards`)
+        // Apply limit if specified (for mock data)
+        if (limit && mockCards.length > limit) {
+          mockCards = mockCards.slice(0, limit)
+          logger.info(`✅ Trimmed mock data to limit of ${limit} cards`)
+        }
+
+        logger.info('Completed One Piece TCG data fetch using mock data', {
+          gameCode: game.code,
+          totalCards: mockCards.length,
+          note: 'Using mock data - real API unavailable'
+        })
+
+        return this.transformToUniversal(mockCards)
       }
-
-      logger.info('Completed One Piece TCG data fetch', {
-        gameCode: game.code,
-        totalCards: mockCards.length,
-        note: 'Using mock data - no official API available yet'
-      })
-
-      return this.transformToUniversal(mockCards)
 
     } catch (error) {
       logger.error('Failed to fetch One Piece TCG data', error as Error, {
@@ -229,6 +246,11 @@ export class OnePieceTransformer {
 
       } catch (error) {
         logger.error('Error fetching One Piece cards from API', error as Error, { page })
+        // For the first page failure, throw the error to trigger fallback
+        if (page === 1) {
+          throw error
+        }
+        // For subsequent pages, just break and return what we have
         break
       }
     }
