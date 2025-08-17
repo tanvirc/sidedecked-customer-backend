@@ -242,18 +242,15 @@ router.get('/cards/:id', async (req, res) => {
   try {
     console.log('DEBUG: Fetching card for ID:', req.params.id)
     
-    // Use raw SQL to avoid TypeORM relation issues
-    const cardQuery = `
-      SELECT c.*, g.code as game_code, g.name as game_name
-      FROM cards c
-      LEFT JOIN games g ON c.game_id = g.id
-      WHERE c.id = $1 AND c.deleted_at IS NULL
-    `
+    const cardRepository = AppDataSource.getRepository(Card)
+    const card = await cardRepository.findOne({
+      where: { id: req.params.id },
+      relations: ['game']
+    })
     
-    const cards = await AppDataSource.query(cardQuery, [req.params.id])
-    console.log('DEBUG: Found cards:', cards.length)
+    console.log('DEBUG: Found card:', card ? card.name : 'none')
     
-    if (!cards || cards.length === 0) {
+    if (!card) {
       return res.status(404).json({
         success: false,
         error: {
@@ -264,15 +261,13 @@ router.get('/cards/:id', async (req, res) => {
       })
     }
 
-    const card = cards[0]
-
-    // Format the card response
+    // Format the card response using TypeORM entity data
     const cardResponse = {
       id: card.id,
       name: card.name,
-      gameId: card.game_id,
-      gameCode: card.game_code,
-      gameName: card.game_name,
+      gameId: card.gameId,
+      gameCode: card.game?.code,
+      gameName: card.game?.name,
       oracleText: card.oracleText,
       flavorText: card.flavorText,
       manaCost: card.manaCost,
@@ -299,11 +294,11 @@ router.get('/cards/:id', async (req, res) => {
       lifeValue: card.lifeValue,
       counterValue: card.counterValue,
       power: card.power,
-      // Add game object if we have game data
-      game: card.game_code ? {
-        id: card.game_id,
-        code: card.game_code,
-        name: card.game_name
+      // Add game object if available
+      game: card.game ? {
+        id: card.game.id,
+        code: card.game.code,
+        name: card.game.name
       } : null
     }
 
@@ -330,18 +325,16 @@ router.get('/cards/:id/details', async (req, res) => {
   try {
     console.log('DEBUG: Fetching card details for ID:', req.params.id)
     
-    // Use raw SQL to avoid TypeORM relation issues
-    const cardQuery = `
-      SELECT c.*, g.code as game_code, g.name as game_name
-      FROM cards c
-      LEFT JOIN games g ON c.game_id = g.id
-      WHERE c.id = $1 AND c.deleted_at IS NULL
-    `
+    const cardRepository = AppDataSource.getRepository(Card)
+    const card = await cardRepository.findOne({
+      where: { id: req.params.id },
+      relations: ['game', 'prints', 'prints.set']
+    })
     
-    const cards = await AppDataSource.query(cardQuery, [req.params.id])
-    console.log('DEBUG: Found cards:', cards.length)
+    console.log('DEBUG: Found card:', card ? card.name : 'none')
+    console.log('DEBUG: Found prints:', card?.prints?.length || 0)
     
-    if (!cards || cards.length === 0) {
+    if (!card) {
       return res.status(404).json({
         success: false,
         error: {
@@ -352,26 +345,13 @@ router.get('/cards/:id/details', async (req, res) => {
       })
     }
 
-    const card = cards[0]
-
-    // Get prints for this card
-    const printsQuery = `
-      SELECT p.*, s.code as set_code, s.name as set_name
-      FROM prints p
-      LEFT JOIN card_sets s ON p.set_id = s.id
-      WHERE p.card_id = $1 AND p.deleted_at IS NULL
-    `
-    
-    const prints = await AppDataSource.query(printsQuery, [req.params.id])
-    console.log('DEBUG: Found prints:', prints.length)
-
     // Format the response
     const cardDetails = {
       id: card.id,
       name: card.name,
-      gameId: card.game_id,
-      gameCode: card.game_code,
-      gameName: card.game_name,
+      gameId: card.gameId,
+      gameCode: card.game?.code,
+      gameName: card.game?.name,
       oracleText: card.oracleText,
       flavorText: card.flavorText,
       manaCost: card.manaCost,
@@ -398,51 +378,55 @@ router.get('/cards/:id/details', async (req, res) => {
       lifeValue: card.lifeValue,
       counterValue: card.counterValue,
       power: card.power,
-      // Add game object if we have game data
-      game: card.game_code ? {
-        id: card.game_id,
-        code: card.game_code,
-        name: card.game_name
+      // Add game object if available
+      game: card.game ? {
+        id: card.game.id,
+        code: card.game.code,
+        name: card.game.name
       } : null,
-      // Add prints with proper mapping
-      prints: prints.map((print: any) => ({
+      // Add prints using TypeORM relation data
+      prints: card.prints?.map((print) => ({
         id: print.id,
         rarity: print.rarity,
         artist: print.artist,
-        collectorNumber: print.collector_number,
+        collectorNumber: print.collectorNumber,
         language: print.language,
-        isLegalStandard: print.is_legal_standard || false,
-        isLegalPioneer: print.is_legal_pioneer || false,
-        isLegalModern: print.is_legal_modern || false,
-        isLegalLegacy: print.is_legal_legacy || false,
-        isLegalVintage: print.is_legal_vintage || false,
-        isLegalCommander: print.is_legal_commander || false,
-        imageSmall: print.image_small,
-        imageNormal: print.image_normal,
-        imageLarge: print.image_large,
-        set: print.set_code ? {
-          id: print.set_id,
-          code: print.set_code,
-          name: print.set_name
+        isLegalStandard: print.isLegalStandard,
+        isLegalPioneer: print.isLegalPioneer,
+        isLegalModern: print.isLegalModern,
+        isLegalLegacy: print.isLegalLegacy,
+        isLegalVintage: print.isLegalVintage,
+        isLegalCommander: print.isLegalCommander,
+        imageSmall: print.imageSmall,
+        imageNormal: print.imageNormal,
+        imageLarge: print.imageLarge,
+        set: print.set ? {
+          id: print.set.id,
+          code: print.set.code,
+          name: print.set.name
         } : null
-      })),
+      })) || [],
       // Add format legality (from first print)
       legality: {
-        standard: prints[0]?.is_legal_standard || false,
-        pioneer: prints[0]?.is_legal_pioneer || false,
-        modern: prints[0]?.is_legal_modern || false,
-        legacy: prints[0]?.is_legal_legacy || false,
-        vintage: prints[0]?.is_legal_vintage || false,
-        commander: prints[0]?.is_legal_commander || false
+        standard: card.prints?.[0]?.isLegalStandard || false,
+        pioneer: card.prints?.[0]?.isLegalPioneer || false,
+        modern: card.prints?.[0]?.isLegalModern || false,
+        legacy: card.prints?.[0]?.isLegalLegacy || false,
+        vintage: card.prints?.[0]?.isLegalVintage || false,
+        commander: card.prints?.[0]?.isLegalCommander || false
       },
-      // Add sets
-      sets: prints
-        .filter((print: any) => print.set_code)
-        .map((print: any) => ({
-          id: print.set_id,
-          code: print.set_code,
-          name: print.set_name
+      // Add sets from prints
+      sets: card.prints
+        ?.filter((print) => print.set)
+        .map((print) => ({
+          id: print.set!.id,
+          code: print.set!.code,
+          name: print.set!.name
         }))
+        .filter((set, index, self) => 
+          // Remove duplicates by ID
+          index === self.findIndex(s => s.id === set.id)
+        ) || []
     }
 
     console.log('DEBUG: Returning card details for:', card.name)
