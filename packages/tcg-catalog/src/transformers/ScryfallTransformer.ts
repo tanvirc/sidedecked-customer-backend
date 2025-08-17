@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios'
-import { Game } from '../entities/Game'
+import { Game } from '../../../../src/entities/Game'
 import { ETLJobType } from '../entities/ETLJob'
 import { UniversalCard, UniversalPrint } from '../types/ETLTypes'
 import { logger } from '../utils/Logger'
@@ -98,7 +98,7 @@ export class ScryfallTransformer {
         logger.debug('Fetching Scryfall page', { url: nextPageUrl })
         
         const response = await this.client.get<ScryfallResponse>(nextPageUrl)
-        const data = response.data
+        const data: ScryfallResponse = response.data
 
         if (data.object !== 'list') {
           throw new Error(`Unexpected response format from Scryfall: ${data.object}`)
@@ -195,8 +195,8 @@ export class ScryfallTransformer {
         manaValue: canonicalCard.cmc,
         colors: canonicalCard.colors || [],
         colorIdentity: canonicalCard.color_identity || [],
-        powerValue: this.parseNumericValue(canonicalCard.power),
-        defenseValue: this.parseNumericValue(canonicalCard.toughness),
+        powerValue: this.parseNumericValue(canonicalCard.power) || undefined,
+        defenseValue: this.parseNumericValue(canonicalCard.toughness) || undefined,
 
         // Other game fields (null for MTG)
         hp: undefined,

@@ -1,4 +1,4 @@
-import { BaseEntity, UniversalSKU } from './base'
+import { BaseEntity, UniversalSKU, SortParams } from './base'
 
 /**
  * Supported TCG Games

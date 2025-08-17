@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist"
+  },
+  "include": [
+    "src/entities/**/*",
+    "src/config/**/*",
+    "src/migrations/**/*",
+    "packages/tcg-catalog/src/entities/ETLJob.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "packages/tcg-catalog/src/services/**/*",
+    "packages/tcg-catalog/src/transformers/**/*",
+    "packages/tcg-catalog/src/queues/**/*",
+    "packages/tcg-catalog/src/index.ts",
+    "**/*.test.ts",
+    "**/*.js",
+    "**/*.js.map"
+  ]
+}

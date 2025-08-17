@@ -13,6 +13,7 @@ export interface ListResponse<T> extends ApiResponse<T[]> {
     totalPages: number
     hasNext: boolean
     hasPrevious: boolean
+    hasMore: boolean
   }
 }
 

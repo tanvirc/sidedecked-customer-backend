@@ -15,7 +15,7 @@
     "jsx": "preserve",
     "incremental": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "strictPropertyInitialization": false,
@@ -30,13 +30,13 @@
     }
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "packages/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "build",
-    "packages",
     "**/*.test.ts",
     "**/*.js",
     "**/*.js.map"

@@ -375,7 +375,7 @@ export function debounce<T extends (...args: any[]) => any>(
   
   return (...args: Parameters<T>) => {
     clearTimeout(timeout)
-    timeout = setTimeout(() => func.apply(this, args), wait)
+    timeout = setTimeout(() => func(...args), wait)
   }
 }
 

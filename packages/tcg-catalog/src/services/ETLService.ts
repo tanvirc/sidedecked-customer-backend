@@ -1,10 +1,10 @@
-import { AppDataSource } from '../../../../apps/api/src/config/database'
-import { Game } from '../entities/Game'
-import { Card } from '../entities/Card'
-import { Print } from '../entities/Print'
-import { CardSet } from '../entities/CardSet'
-import { CatalogSKU } from '../entities/CatalogSKU'
-import { ETLJob, ETLJobStatus, ETLJobType } from '../entities/ETLJob'
+import { AppDataSource } from '../../../../src/config/database'
+import { Game } from '../../../../src/entities/Game'
+import { Card } from '../../../../src/entities/Card'
+import { Print } from '../../../../src/entities/Print'
+import { CardSet } from '../../../../src/entities/CardSet'
+import { CatalogSKU } from '../../../../src/entities/CatalogSKU'
+import { ETLJob, ETLJobStatus, ETLJobType } from '../../../../src/entities/ETLJob'
 import { 
   ETLConfig, 
   ETLResult, 
@@ -22,7 +22,7 @@ import {
   YugiohTransformer, 
   OnePieceTransformer 
 } from '../transformers'
-import { getImageQueue } from '../../../../apps/api/src/config/infrastructure'
+// import { getImageQueue } from '../../../../src/config/infrastructure' // Disabled for now
 
 export class ETLService {
   private circuitBreakers: Map<string, CircuitBreakerState> = new Map()
@@ -680,43 +680,9 @@ export class ETLService {
    * Queue image processing for a print
    */
   private async queueImageProcessing(printId: string, images: any): Promise<void> {
-    try {
-      const imageQueue = getImageQueue()
-      
-      const imageUrls: Record<string, string> = {}
-      
-      if (images.small) imageUrls.small = images.small
-      if (images.normal) imageUrls.normal = images.normal
-      if (images.large) imageUrls.large = images.large
-      if (images.artCrop) imageUrls.artCrop = images.artCrop
-
-      if (Object.keys(imageUrls).length > 0) {
-        await imageQueue.add('process-images', {
-          printId,
-          imageUrls,
-          priority: 5
-        }, {
-          attempts: 3,
-          backoff: {
-            type: 'exponential',
-            delay: 2000
-          },
-          removeOnComplete: 50,
-          removeOnFail: 25
-        })
-
-        logger.debug('Image processing job queued', {
-          printId,
-          imageTypes: Object.keys(imageUrls)
-        })
-      }
-    } catch (error) {
-      logger.error('Failed to queue image processing', error as Error, {
-        printId,
-        images
-      })
-      // Don't throw - image processing is not critical for ETL success
-    }
+    // Image processing disabled for standalone ETL
+    logger.debug('Image processing skipped (not available in standalone mode)', { printId })
+    return
   }
 }
 

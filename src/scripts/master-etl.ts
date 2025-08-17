@@ -19,7 +19,7 @@ import { Game } from '../entities/Game'
 import { logger } from '../../packages/tcg-catalog/src/utils/Logger'
 
 interface ETLOptions {
-  games?: string[]
+  game?: string[]
   all?: boolean
   limit?: number
   type?: ETLJobType
@@ -39,7 +39,7 @@ async function initializeDatabase(): Promise<void> {
 
 async function getAvailableGames(): Promise<Game[]> {
   const gameRepository = AppDataSource.getRepository(Game)
-  return await gameRepository.find({ where: { isActive: true } })
+  return await gameRepository.find({ where: { etlEnabled: true } })
 }
 
 async function ensureGamesExist(): Promise<void> {
@@ -49,30 +49,30 @@ async function ensureGamesExist(): Promise<void> {
     {
       code: 'MTG',
       name: 'Magic: The Gathering',
-      fullName: 'Magic: The Gathering',
+      displayName: 'Magic: The Gathering',
       apiProvider: 'scryfall',
-      isActive: true
+      etlEnabled: true
     },
     {
       code: 'POKEMON',
       name: 'Pokémon',
-      fullName: 'Pokémon Trading Card Game',
+      displayName: 'Pokémon Trading Card Game',
       apiProvider: 'pokemon_tcg',
-      isActive: true
+      etlEnabled: true
     },
     {
       code: 'YUGIOH',
       name: 'Yu-Gi-Oh!',
-      fullName: 'Yu-Gi-Oh! Trading Card Game',
+      displayName: 'Yu-Gi-Oh! Trading Card Game',
       apiProvider: 'ygoprodeck',
-      isActive: true
+      etlEnabled: true
     },
     {
       code: 'OPTCG',
       name: 'One Piece',
-      fullName: 'One Piece Card Game',
+      displayName: 'One Piece Card Game',
       apiProvider: 'onepiece_tcg',
-      isActive: true
+      etlEnabled: true
     }
   ]
 
@@ -98,7 +98,26 @@ async function runETLForGame(gameCode: string, options: ETLOptions): Promise<voi
     concurrency: 1 // Keep it simple for reliability
   })
 
-  const jobType = options.type || (options.limit && options.limit < 100 ? ETLJobType.SETS : ETLJobType.INCREMENTAL)
+  // Convert string type to enum
+  let jobType = ETLJobType.INCREMENTAL_SYNC
+  if (options.type) {
+    switch (options.type) {
+      case 'full_sync':
+        jobType = ETLJobType.FULL_SYNC
+        break
+      case 'incremental_sync':
+        jobType = ETLJobType.INCREMENTAL_SYNC
+        break
+      case 'banlist_update':
+        jobType = ETLJobType.BANLIST_UPDATE
+        break
+      default:
+        jobType = ETLJobType.INCREMENTAL_SYNC
+    }
+  } else if (options.limit && options.limit < 100) {
+    // For small limits, use incremental sync instead of sets
+    jobType = ETLJobType.INCREMENTAL_SYNC
+  }
 
   try {
     logger.info(`Starting ETL for ${gameCode}`, {
@@ -108,7 +127,7 @@ async function runETLForGame(gameCode: string, options: ETLOptions): Promise<voi
       forceUpdate: options.forceUpdate
     })
 
-    const result = await etlService.startETLJob(gameCode, jobType, 'manual')
+    const result = await etlService.startETLJob(gameCode, jobType as any, 'manual')
 
     logger.info(`ETL completed for ${gameCode}`, {
       success: result.success,
@@ -119,7 +138,7 @@ async function runETLForGame(gameCode: string, options: ETLOptions): Promise<voi
       printsUpdated: result.printsUpdated,
       skusGenerated: result.skusGenerated,
       imagesQueued: result.imagesQueued,
-      duration: `${result.duration}ms`,
+      duration: result.duration,
       errors: result.errors.length
     })
 
@@ -146,8 +165,8 @@ async function main(): Promise<void> {
     .description('Master ETL script for SideDecked TCG catalog')
     .option('-g, --game <games>', 'Comma-separated list of game codes (MTG,POKEMON,YUGIOH,OPTCG)')
     .option('-a, --all', 'Import all games')
-    .option('-l, --limit <number>', 'Limit number of cards to import per game', parseInt)
-    .option('-t, --type <type>', 'ETL job type (full, incremental, sets, banlist_update)', 'incremental')
+    .option('-l, --limit <number>', 'Limit number of cards to import per game')
+    .option('-t, --type <type>', 'ETL job type (full_sync, incremental_sync, banlist_update)', 'incremental_sync')
     .option('--skip-images', 'Skip image processing')
     .option('--force-update', 'Force update existing cards')
     .option('--dry-run', 'Show what would be imported without actually importing')
@@ -155,6 +174,11 @@ async function main(): Promise<void> {
   program.parse()
 
   const options = program.opts() as ETLOptions & { dryRun?: boolean }
+  
+  // Parse limit as number
+  if (options.limit) {
+    options.limit = parseInt(options.limit as any, 10)
+  }
 
   try {
     // Initialize database
@@ -172,17 +196,14 @@ async function main(): Promise<void> {
       logger.info('Processing all available games', {
         games: availableGames.map(g => g.code)
       })
-    } else if (options.games) {
-      const requestedCodes = options.games
+    } else if (options.game) {
+      const requestedCodes = Array.isArray(options.game) ? options.game : (options.game as string).split(',')
       gamesToProcess = availableGames.filter(game => 
         requestedCodes.includes(game.code)
       )
       
       if (gamesToProcess.length === 0) {
-        logger.error('No valid games found', {
-          requested: requestedCodes,
-          available: availableGames.map(g => g.code)
-        })
+        console.error('No valid games found. Requested:', requestedCodes, 'Available:', availableGames.map(g => g.code))
         process.exit(1)
       }
 
@@ -190,7 +211,7 @@ async function main(): Promise<void> {
         games: gamesToProcess.map(g => g.code)
       })
     } else {
-      logger.error('Must specify either --game or --all')
+      console.error('Must specify either --game or --all')
       program.help()
       process.exit(1)
     }
@@ -240,7 +261,7 @@ async function main(): Promise<void> {
     }
 
   } catch (error) {
-    logger.error('Master ETL script failed', error as Error)
+    console.error('Master ETL script failed:', error)
     process.exit(1)
   } finally {
     // Clean up database connection
@@ -252,20 +273,20 @@ async function main(): Promise<void> {
 
 // Handle unhandled rejections
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason)
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason)
   process.exit(1)
 })
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error)
+  console.error('Uncaught Exception:', error)
   process.exit(1)
 })
 
 // Run the script
 if (require.main === module) {
   main().catch((error) => {
-    logger.error('Fatal error in main:', error)
+    console.error('Fatal error in main:', error)
     process.exit(1)
   })
 }

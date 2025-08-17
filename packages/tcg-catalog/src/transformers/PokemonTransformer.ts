@@ -1,10 +1,11 @@
 import { PokemonTCG } from 'pokemon-tcg-sdk-typescript'
-import { Game } from '../entities/Game'
+import { Game } from '../../../../src/entities/Game'
 import { ETLJobType } from '../entities/ETLJob'
 import { UniversalCard, UniversalPrint } from '../types/ETLTypes'
 import { logger } from '../utils/Logger'
 import { generateNormalizedName } from '../utils/Helpers'
 
+// Type definition for Pokemon TCG SDK card (since SDK doesn't export its types)
 interface PokemonCard {
   id: string
   name: string
@@ -70,36 +71,28 @@ interface PokemonCard {
     updatedAt: string
     prices?: {
       holofoil?: {
-        low?: number
-        mid?: number
-        high?: number
-        market?: number
-        directLow?: number
+        low?: number | null
+        mid?: number | null
+        high?: number | null
+        market?: number | null
+        directLow?: number | null
       }
       reverseHolofoil?: {
-        low?: number
-        mid?: number
-        high?: number
-        market?: number
-        directLow?: number
+        low?: number | null
+        mid?: number | null
+        high?: number | null
+        market?: number | null
+        directLow?: number | null
       }
       normal?: {
-        low?: number
-        mid?: number
-        high?: number
-        market?: number
-        directLow?: number
+        low?: number | null
+        mid?: number | null
+        high?: number | null
+        market?: number | null
+        directLow?: number | null
       }
     }
   }
-}
-
-interface PokemonResponse {
-  data: PokemonCard[]
-  page: number
-  pageSize: number
-  count: number
-  totalCount: number
 }
 
 export class PokemonTransformer {
@@ -257,7 +250,7 @@ export class PokemonTransformer {
         hp: canonicalCard.hp ? parseInt(canonicalCard.hp, 10) : undefined,
         retreatCost: canonicalCard.convertedRetreatCost,
         energyTypes: canonicalCard.types || [],
-        evolutionStage: this.determineEvolutionStage(canonicalCard),
+        evolutionStage: this.determineEvolutionStage(canonicalCard) || undefined,
 
         // MTG fields (null for Pokemon)
         manaCost: undefined,
@@ -354,7 +347,7 @@ export class PokemonTransformer {
 
     // Abilities Section (critical rules text)
     if (card.abilities && card.abilities.length > 0) {
-      const abilityTexts = card.abilities.map(ability => {
+      const abilityTexts = card.abilities.map((ability: { type: string; name: string; text: string }) => {
         return `${ability.type}: ${ability.name}\n${ability.text}`
       })
       sections.push(`[ABILITIES]\n${abilityTexts.join('\n\n')}`)
@@ -362,7 +355,7 @@ export class PokemonTransformer {
 
     // Attacks Section
     if (card.attacks && card.attacks.length > 0) {
-      const attackTexts = card.attacks.map(attack => {
+      const attackTexts = card.attacks.map((attack: { name: string; cost?: string[]; damage?: string; text?: string }) => {
         let attackHeader = attack.name
         if (attack.cost && attack.cost.length > 0) {
           attackHeader += ` (${attack.cost.join('')})`
@@ -389,11 +382,11 @@ export class PokemonTransformer {
     // Battle Stats Section
     const battleStats: string[] = []
     if (card.weaknesses && card.weaknesses.length > 0) {
-      const weaknessText = card.weaknesses.map(w => `${w.type}${w.value}`).join(', ')
+      const weaknessText = card.weaknesses.map((w: { type: string; value: string }) => `${w.type}${w.value}`).join(', ')
       battleStats.push(`Weakness: ${weaknessText}`)
     }
     if (card.resistances && card.resistances.length > 0) {
-      const resistanceText = card.resistances.map(r => `${r.type}${r.value}`).join(', ')
+      const resistanceText = card.resistances.map((r: { type: string; value: string }) => `${r.type}${r.value}`).join(', ')
       battleStats.push(`Resistance: ${resistanceText}`)
     }
     if (card.retreatCost && card.retreatCost.length > 0) {
@@ -484,11 +477,11 @@ export class PokemonTransformer {
     // Try to get the most relevant price
     let usdPrice: number | undefined
 
-    if (prices.holofoil?.market) {
+    if (prices.holofoil?.market && prices.holofoil.market !== null) {
       usdPrice = prices.holofoil.market
-    } else if (prices.normal?.market) {
+    } else if (prices.normal?.market && prices.normal.market !== null) {
       usdPrice = prices.normal.market
-    } else if (prices.reverseHolofoil?.market) {
+    } else if (prices.reverseHolofoil?.market && prices.reverseHolofoil.market !== null) {
       usdPrice = prices.reverseHolofoil.market
     }
 

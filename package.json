@@ -17,9 +17,9 @@
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist",
     "migration:create": "typeorm migration:create",
-    "migration:run": "typeorm migration:run -d dist/config/database.js",
-    "migration:revert": "typeorm migration:revert -d dist/config/database.js",
-    "migration:show": "typeorm migration:show -d dist/config/database.js",
+    "migration:run": "typeorm migration:run -d dist/src/config/database.js",
+    "migration:revert": "typeorm migration:revert -d dist/src/config/database.js",
+    "migration:show": "typeorm migration:show -d dist/src/config/database.js",
     "migration:deploy": "npm run build && npm run migration:run",
     "seed": "ts-node src/scripts/seed.ts",
     "etl": "ts-node src/scripts/master-etl.ts"

@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios'
-import { Game } from '../entities/Game'
+import { Game } from '../../../../src/entities/Game'
 import { ETLJobType } from '../entities/ETLJob'
 import { UniversalCard, UniversalPrint } from '../types/ETLTypes'
 import { logger } from '../utils/Logger'

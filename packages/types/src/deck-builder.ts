@@ -109,7 +109,7 @@ export interface Format extends BaseEntity {
 export interface DeckValidation {
   is_valid: boolean
   format: string
-  errors: ValidationError[]
+  errors: DeckValidationError[]
   warnings: ValidationWarning[]
   suggestions: DeckSuggestion[]
   
@@ -123,7 +123,7 @@ export interface DeckValidation {
   format_legality: Record<string, boolean>
 }
 
-export interface ValidationError {
+export interface DeckValidationError {
   type: 'deck_size' | 'banned_card' | 'too_many_copies' | 'illegal_card' | 'commander_rule'
   message: string
   card_id?: string
