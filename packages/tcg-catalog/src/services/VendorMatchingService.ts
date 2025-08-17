@@ -135,9 +135,9 @@ export class VendorMatchingService {
         // TODO: Implement AI matching using ML models
       }
 
-      // No confident match found
-      result.alternativeMatches = result.alternativeMatches
-        .sort((a, b) => b.confidence - a.confidence)
+      // No confident match found  
+      result.alternativeMatches = (result.alternativeMatches || [])
+        .sort((a: any, b: any) => b.confidence - a.confidence)
         .slice(0, this.config.maxAlternatives)
 
       return result
@@ -378,7 +378,7 @@ export class VendorMatchingService {
           // Find catalog SKU for this card
           const catalogSku = await AppDataSource.getRepository(CatalogSKU).findOne({
             where: { 
-              gameCode: searchResult.gameCode,
+              gameCode: (searchResult as any).gameCode || 'MTG',
               // Find first available SKU for this card
             },
             relations: ['print', 'print.card', 'print.set']
@@ -396,7 +396,8 @@ export class VendorMatchingService {
             })
           }
         } catch (error) {
-          logger.warn('Failed to process fuzzy match result', error as Error, {
+          logger.warn('Failed to process fuzzy match result', {
+            error: (error as Error).message,
             searchResult
           })
         }

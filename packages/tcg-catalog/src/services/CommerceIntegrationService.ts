@@ -351,7 +351,7 @@ export class CommerceIntegrationService {
 
       return {
         valid: errors.length === 0,
-        catalogSku,
+        catalogSku: catalogSku || undefined,
         errors,
         suggestions
       }

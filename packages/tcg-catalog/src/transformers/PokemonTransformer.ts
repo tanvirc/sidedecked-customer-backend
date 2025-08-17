@@ -112,17 +112,21 @@ export class PokemonTransformer {
     }
   }
 
-  async fetchCards(game: Game, jobType: ETLJobType): Promise<UniversalCard[]> {
-    logger.info('Starting Pokemon TCG data fetch using SDK', { gameCode: game.code, jobType })
+  async fetchCards(game: Game, jobType: ETLJobType, limit?: number): Promise<UniversalCard[]> {
+    logger.info('Starting Pokemon TCG data fetch using SDK', { gameCode: game.code, jobType, limit })
 
     try {
       let allCards: PokemonCard[] = []
       
       // Use Pokemon TCG SDK instead of direct API calls
-      const query = this.buildQuery(jobType)
+      const query = this.buildQuery(jobType, limit)
       logger.debug('Pokemon TCG query', { query })
+      
+      // Log the query being used
+      logger.apiCall('pokemon_tcg', query, 'GET')
+      logger.info(`🔍 Pokemon TCG Query: ${query}${limit ? ` (limit: ${limit})` : ''}`)
 
-      if (jobType === 'full') {
+      if (jobType === 'full' && (!limit || limit > 1000)) {
         // For full sync, get all cards with pagination
         let page = 1
         const pageSize = 250
@@ -149,6 +153,13 @@ export class PokemonTransformer {
             page
           })
 
+          // Check if we've reached the limit
+          if (limit && allCards.length >= limit) {
+            allCards = allCards.slice(0, limit) // Trim to exact limit
+            logger.info(`✅ Reached limit of ${limit} cards, stopping fetch`)
+            break
+          }
+
           if (cards.length < pageSize) {
             break
           }
@@ -165,13 +176,22 @@ export class PokemonTransformer {
           await this.sleep(this.rateLimit)
         }
       } else {
-        // For incremental or limited syncs, get a smaller batch
+        // For incremental, limited syncs, or small limits - use single request with appropriate pageSize
+        const pageSize = limit ? Math.min(limit, 250) : 100
+        
         const cards = await PokemonTCG.findCardsByQueries({
           q: query,
-          pageSize: 100
+          pageSize,
+          orderBy: 'set.releaseDate'
         })
 
         allCards.push(...cards)
+        
+        // Ensure we don't exceed the limit
+        if (limit && allCards.length > limit) {
+          allCards = allCards.slice(0, limit)
+          logger.info(`✅ Trimmed to limit of ${limit} cards`)
+        }
       }
 
       logger.info('Completed Pokemon TCG data fetch using SDK', {
@@ -190,13 +210,22 @@ export class PokemonTransformer {
     }
   }
 
-  private buildQuery(jobType: ETLJobType): string {
+  private buildQuery(jobType: ETLJobType, limit?: number): string {
+    // For small limits, use broad queries that are guaranteed to return results
+    if (limit && limit <= 100) {
+      return 'supertype:pokemon' // Pokemon cards (always has results)
+    }
+    
     switch (jobType) {
       case ETLJobType.FULL:
       case ETLJobType.FULL_SYNC:
         return '!set.id:*promo*' // Exclude promo sets for full sync
       case ETLJobType.INCREMENTAL:
       case ETLJobType.INCREMENTAL_SYNC:
+        // For testing with limits, use broader query. For production, use date-based
+        if (limit && limit <= 1000) {
+          return 'supertype:pokemon' // Fallback for testing
+        }
         // Fetch cards from sets updated in last 30 days
         const thirtyDaysAgo = new Date()
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -209,8 +238,10 @@ export class PokemonTransformer {
         // For banlist updates, fetch cards that have format legality
         return 'legalities.standard:legal OR legalities.expanded:legal OR legalities.unlimited:legal'
       default:
-        // Default to recent sets for other job types
-        return 'set.series:"Scarlet & Violet"'
+        // Default to recent sets, but use broad query for small limits
+        return limit && limit <= 100 ? 
+          'supertype:pokemon' : 
+          'set.series:"Scarlet & Violet"'
     }
   }
 

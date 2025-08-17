@@ -36,7 +36,7 @@ export const AppDataSource = new DataSource({
   type: 'postgres',
   url: config.DATABASE_URL,
   synchronize: false, // Always use migrations in production
-  logging: config.NODE_ENV === 'development',
+  logging: config.NODE_ENV === 'development' && !process.env.DISABLE_TYPEORM_LOGGING,
   entities: [
     // TCG Catalog
     Game,

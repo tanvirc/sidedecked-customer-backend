@@ -75,21 +75,32 @@ export class YugiohTransformer {
     })
   }
 
-  async fetchCards(game: Game, jobType: ETLJobType): Promise<UniversalCard[]> {
-    logger.info('Starting YuGiOh data fetch', { gameCode: game.code, jobType })
+  async fetchCards(game: Game, jobType: ETLJobType, limit?: number): Promise<UniversalCard[]> {
+    logger.info('Starting YuGiOh data fetch', { gameCode: game.code, jobType, limit })
 
     try {
       let allCards: YugiohCard[] = []
       
       // YGOPro API doesn't support pagination, so we fetch all cards at once
       // For incremental updates, we'll filter by date later
-      logger.debug('Fetching YuGiOh cards from YGOPro API')
+      const params = this.buildParams(jobType, limit)
+      logger.debug('Fetching YuGiOh cards from YGOPro API', { params })
+      
+      // Log the query being used
+      logger.apiCall('ygoprodeck', '/cardinfo.php', 'GET')
+      logger.info(`🔍 YuGiOh Query: ${JSON.stringify(params)}${limit ? ` (limit: ${limit})` : ''}`)
       
       const response = await this.client.get<YugiohResponse>('/cardinfo.php', {
-        params: this.buildParams(jobType)
+        params
       })
 
       allCards = response.data.data || []
+
+      // Apply limit if specified (since YGOPro API doesn't support pagination)
+      if (limit && allCards.length > limit) {
+        allCards = allCards.slice(0, limit)
+        logger.info(`✅ Trimmed to limit of ${limit} cards (YGOPro API doesn't support pagination)`)
+      }
 
       logger.info('Completed YuGiOh data fetch', {
         gameCode: game.code,
@@ -107,10 +118,17 @@ export class YugiohTransformer {
     }
   }
 
-  private buildParams(jobType: ETLJobType): Record<string, any> {
+  private buildParams(jobType: ETLJobType, limit?: number): Record<string, any> {
     const params: Record<string, any> = {
       misc: 'yes', // Include misc info like release date
       format: 'tcg' // TCG format only
+    }
+
+    // For small limits, we can use more specific filters to reduce API response size
+    if (limit && limit <= 100) {
+      // For small limits, fetch only monster cards (most common card type)
+      params.type = 'Monster'
+      return params
     }
 
     switch (jobType) {
@@ -120,6 +138,11 @@ export class YugiohTransformer {
         break
       case ETLJobType.INCREMENTAL:
       case ETLJobType.INCREMENTAL_SYNC:
+        // For testing with limits, use broader query. For production, use date-based filtering
+        if (limit && limit <= 1000) {
+          // Use more specific filter for testing
+          params.type = 'Monster'
+        }
         // YGOPro doesn't support date filtering, so we'll get all and filter later
         // This is a limitation of their API
         break
@@ -132,8 +155,12 @@ export class YugiohTransformer {
         params.banlist = 'tcg'
         break
       default:
-        // Default to recent sets
-        params.startdate = '2023-01-01'
+        // Default to recent sets, but use monster filter for small limits
+        if (limit && limit <= 100) {
+          params.type = 'Monster'
+        } else {
+          params.startdate = '2023-01-01'
+        }
         break
     }
 

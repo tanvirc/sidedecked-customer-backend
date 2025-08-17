@@ -15,6 +15,9 @@ class TCGLogger {
   private logger: winston.Logger
 
   constructor() {
+    // Check if we're running ETL script for cleaner output
+    const isETLRun = process.argv.some(arg => arg.includes('master-etl'))
+    
     this.logger = winston.createLogger({
       level: process.env.LOG_LEVEL || 'info',
       format: winston.format.combine(
@@ -37,6 +40,10 @@ class TCGLogger {
             winston.format.colorize(),
             winston.format.simple(),
             winston.format.printf(({ timestamp, level, message, ...meta }) => {
+              // For ETL runs, use a cleaner format without metadata clutter
+              if (isETLRun) {
+                return `${message}`
+              }
               const metaStr = Object.keys(meta).length ? 
                 ` ${JSON.stringify(meta)}` : ''
               return `${timestamp} [${level}] ${message}${metaStr}`
@@ -120,6 +127,94 @@ class TCGLogger {
       total,
       percentage,
       operation: 'etl_progress'
+    })
+  }
+
+  // Enhanced ETL logging methods for comprehensive visibility
+  etlExpectations(gameCode: string, expectedCards: number, apiQuery: string, jobId?: string): void {
+    this.info(`🔍 ETL Expectations for ${gameCode}`, {
+      gameCode,
+      jobId,
+      expectedCards,
+      apiQuery,
+      operation: 'etl_expectations'
+    })
+  }
+
+  cardProcessing(cardName: string, gameCode: string, status: 'processing' | 'imported' | 'skipped' | 'failed', jobId?: string): void {
+    const emoji = {
+      processing: '⏳',
+      imported: '✅', 
+      skipped: '⚠️',
+      failed: '❌'
+    }[status]
+    
+    this.info(`${emoji} ${status.toUpperCase()}: ${cardName} (${gameCode})`, {
+      cardName,
+      gameCode,
+      jobId,
+      status,
+      operation: 'card_processing'
+    })
+  }
+
+  cardSkipped(cardName: string, reason: string, oracleHash: string, gameCode: string, jobId?: string): void {
+    this.info(`⚠️ SKIPPED: ${cardName} - ${reason}`, {
+      cardName,
+      gameCode,
+      jobId,
+      reason,
+      oracleHash: oracleHash.substring(0, 8) + '...',
+      operation: 'card_skipped'
+    })
+  }
+
+  cardImported(cardName: string, gameCode: string, printsCreated: number, skusCreated: number, isUpdate: boolean = false, jobId?: string): void {
+    const action = isUpdate ? 'UPDATED' : 'IMPORTED'
+    const emoji = isUpdate ? '🔄' : '✅'
+    
+    this.info(`${emoji} ${action}: ${cardName} - created ${printsCreated} prints + ${skusCreated} SKUs`, {
+      cardName,
+      gameCode,
+      jobId,
+      printsCreated,
+      skusCreated,
+      isUpdate,
+      operation: 'card_imported'
+    })
+  }
+
+  etlSummary(gameCode: string, stats: {
+    expected: number
+    imported: number
+    updated: number
+    skipped: number
+    failed: number
+    printsCreated: number
+    setsCreated: number
+    skusGenerated: number
+    duration: number
+  }, jobId?: string): void {
+    this.info(`🎯 ETL SUMMARY FOR ${gameCode}`, {
+      gameCode,
+      jobId,
+      operation: 'etl_summary',
+      ...stats
+    })
+
+    // Also log a human-readable summary
+    const lines = [
+      `🎯 ETL SUMMARY FOR ${gameCode}`,
+      `📊 Expected: ${stats.expected} cards from API`,
+      `✅ Imported: ${stats.imported} new cards, ${stats.updated} updated cards`,
+      `📜 Created: ${stats.printsCreated} prints, ${stats.setsCreated} sets, ${stats.skusGenerated} SKUs`,
+      `⚠️ Skipped: ${stats.skipped} duplicate cards`,
+      `❌ Failed: ${stats.failed} cards with errors`,
+      `⏱️ Duration: ${stats.duration}ms`
+    ]
+    
+    lines.forEach(line => {
+      console.log(line)
     })
   }
 

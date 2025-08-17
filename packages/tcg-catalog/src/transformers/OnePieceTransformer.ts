@@ -58,13 +58,23 @@ export class OnePieceTransformer {
     })
   }
 
-  async fetchCards(game: Game, jobType: ETLJobType): Promise<UniversalCard[]> {
-    logger.info('Starting One Piece TCG data fetch', { gameCode: game.code, jobType })
+  async fetchCards(game: Game, jobType: ETLJobType, limit?: number): Promise<UniversalCard[]> {
+    logger.info('Starting One Piece TCG data fetch', { gameCode: game.code, jobType, limit })
 
     try {
       // For now, we'll return mock data since there's no official API
       // This can be replaced when an official API becomes available
-      const mockCards = this.generateMockCards(jobType)
+      let mockCards = this.generateMockCards(jobType, limit)
+      
+      // Log the query being used
+      logger.apiCall('onepiece_tcg', 'mock_data', 'GET')
+      logger.info(`🔍 One Piece Query: mock data generation${limit ? ` (limit: ${limit})` : ''}`)
+
+      // Apply limit if specified (for mock data)
+      if (limit && mockCards.length > limit) {
+        mockCards = mockCards.slice(0, limit)
+        logger.info(`✅ Trimmed mock data to limit of ${limit} cards`)
+      }
 
       logger.info('Completed One Piece TCG data fetch', {
         gameCode: game.code,
@@ -83,7 +93,7 @@ export class OnePieceTransformer {
     }
   }
 
-  private generateMockCards(jobType: ETLJobType): OnePieceCard[] {
+  private generateMockCards(jobType: ETLJobType, limit?: number): OnePieceCard[] {
     // Generate some mock One Piece cards for testing
     // This should be replaced with actual API calls when available
     const mockCards: OnePieceCard[] = [
@@ -143,26 +153,39 @@ export class OnePieceTransformer {
       }
     ]
 
+    let resultCards: OnePieceCard[]
+
     // Filter based on job type
     switch (jobType) {
       case 'full':
-        return mockCards
+        resultCards = mockCards
+        break
       case 'incremental':
         // Return only recent cards (mock: last card)
-        return mockCards.slice(-1)
+        resultCards = mockCards.slice(-1)
+        break
       case 'sets':
         // Return cards from specific set
-        return mockCards.filter(card => card.set_id === 'OP01')
+        resultCards = mockCards.filter(card => card.set_id === 'OP01')
+        break
       default:
-        return mockCards
+        resultCards = mockCards
+        break
     }
+
+    // Apply limit if specified
+    if (limit && resultCards.length > limit) {
+      resultCards = resultCards.slice(0, limit)
+    }
+
+    return resultCards
   }
 
-  private async fetchCardsFromAPI(jobType: ETLJobType): Promise<OnePieceCard[]> {
+  private async fetchCardsFromAPI(jobType: ETLJobType, limit?: number): Promise<OnePieceCard[]> {
     // This method will be implemented when an official API becomes available
     let allCards: OnePieceCard[] = []
     let page = 1
-    const perPage = 100
+    const perPage = limit ? Math.min(limit, 100) : 100
 
     while (true) {
       try {
@@ -172,7 +195,7 @@ export class OnePieceTransformer {
           params: {
             page,
             per_page: perPage,
-            ...this.buildQueryParams(jobType)
+            ...this.buildQueryParams(jobType, limit)
           }
         })
 
@@ -184,6 +207,13 @@ export class OnePieceTransformer {
           totalCardsSoFar: allCards.length,
           page
         })
+
+        // Check if we've reached the limit
+        if (limit && allCards.length >= limit) {
+          allCards = allCards.slice(0, limit) // Trim to exact limit
+          logger.info(`✅ Reached limit of ${limit} cards, stopping fetch`)
+          break
+        }
 
         if (data.cards.length < perPage) {
           break
@@ -206,8 +236,15 @@ export class OnePieceTransformer {
     return allCards
   }
 
-  private buildQueryParams(jobType: ETLJobType): Record<string, any> {
+  private buildQueryParams(jobType: ETLJobType, limit?: number): Record<string, any> {
     const params: Record<string, any> = {}
+
+    // For small limits, we can use more specific filters to reduce API response size
+    if (limit && limit <= 100) {
+      // For small limits, fetch only character cards (most common type)
+      params.type = 'Character'
+      return params
+    }
 
     switch (jobType) {
       case ETLJobType.FULL:
@@ -216,10 +253,16 @@ export class OnePieceTransformer {
         break
       case ETLJobType.INCREMENTAL:
       case ETLJobType.INCREMENTAL_SYNC:
-        // Fetch cards from last 30 days
-        const thirtyDaysAgo = new Date()
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-        params.since = thirtyDaysAgo.toISOString().split('T')[0]
+        // For testing with limits, use broader query. For production, use date-based filtering
+        if (limit && limit <= 1000) {
+          // Use more specific filter for testing
+          params.type = 'Character'
+        } else {
+          // Fetch cards from last 30 days
+          const thirtyDaysAgo = new Date()
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+          params.since = thirtyDaysAgo.toISOString().split('T')[0]
+        }
         break
       case ETLJobType.SETS:
         // Fetch only from latest set
@@ -229,8 +272,12 @@ export class OnePieceTransformer {
         // For banlist updates, get all cards (mock API limitation)
         break
       default:
-        // Default to latest set
-        params.latest_set = true
+        // Default to latest set, but use character filter for small limits
+        if (limit && limit <= 100) {
+          params.type = 'Character'
+        } else {
+          params.latest_set = true
+        }
         break
     }
 

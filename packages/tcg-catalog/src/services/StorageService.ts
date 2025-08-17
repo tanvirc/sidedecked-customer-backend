@@ -429,7 +429,7 @@ export class StorageService {
     const result = {
       deletedCount: 0,
       freedBytes: 0,
-      errors: []
+      errors: [] as string[]
     }
 
     try {

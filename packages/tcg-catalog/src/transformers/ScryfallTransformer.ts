@@ -87,12 +87,16 @@ export class ScryfallTransformer {
     })
   }
 
-  async fetchCards(game: Game, jobType: ETLJobType): Promise<UniversalCard[]> {
+  async fetchCards(game: Game, jobType: ETLJobType, limit?: number): Promise<UniversalCard[]> {
     logger.info('Starting Scryfall data fetch', { gameCode: game.code, jobType })
 
     try {
       let allCards: ScryfallCard[] = []
-      let nextPageUrl: string | undefined = this.buildInitialUrl(jobType)
+      let nextPageUrl: string | undefined = this.buildInitialUrl(jobType, limit)
+      
+      // Log the query being used
+      logger.apiCall('scryfall', nextPageUrl, 'GET')
+      logger.info(`🔍 Scryfall Query: ${nextPageUrl}${limit ? ` (limit: ${limit})` : ''}`)
 
       while (nextPageUrl) {
         logger.debug('Fetching Scryfall page', { url: nextPageUrl })
@@ -112,6 +116,13 @@ export class ScryfallTransformer {
           totalCardsSoFar: allCards.length,
           hasMore: data.has_more
         })
+
+        // Check if we've reached the limit
+        if (limit && allCards.length >= limit) {
+          allCards = allCards.slice(0, limit) // Trim to exact limit
+          logger.info(`✅ Reached limit of ${limit} cards, stopping fetch`)
+          break
+        }
 
         // Safety check to prevent infinite loops
         if (allCards.length > 100000) {
@@ -136,8 +147,13 @@ export class ScryfallTransformer {
     }
   }
 
-  private buildInitialUrl(jobType: ETLJobType): string {
+  private buildInitialUrl(jobType: ETLJobType, limit?: number): string {
     const baseQuery = '/cards/search?q='
+    
+    // For small limits, use broad queries that are guaranteed to return results
+    if (limit && limit <= 100) {
+      return `${baseQuery}game:paper is:booster` // Cards in booster packs (always has results)
+    }
     
     switch (jobType) {
       case ETLJobType.FULL:
@@ -145,6 +161,10 @@ export class ScryfallTransformer {
         return `${baseQuery}game:paper`
       case ETLJobType.INCREMENTAL:
       case ETLJobType.INCREMENTAL_SYNC:
+        // For testing with limits, use broader query. For production, use date-based
+        if (limit && limit <= 1000) {
+          return `${baseQuery}game:paper is:booster` // Fallback for testing
+        }
         // Fetch cards from last 7 days
         const sevenDaysAgo = new Date()
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
@@ -157,8 +177,10 @@ export class ScryfallTransformer {
         // For banlist updates, fetch cards that are legal in major formats
         return `${baseQuery}game:paper (legal:standard OR legal:pioneer OR legal:modern OR legal:legacy OR legal:vintage OR legal:commander)`
       default:
-        // Default to recent sets
-        return `${baseQuery}game:paper is:new`
+        // Default to recent sets, but use booster for small limits
+        return limit && limit <= 100 ? 
+          `${baseQuery}game:paper is:booster` : 
+          `${baseQuery}game:paper is:new`
     }
   }
 

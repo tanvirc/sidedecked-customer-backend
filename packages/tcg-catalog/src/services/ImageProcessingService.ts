@@ -70,11 +70,9 @@ export class ImageProcessingService {
       const result: ImageProcessingResult = {
         success: true,
         printId,
-        imageType,
+        imageType: imageType as any,
         blurhash,
-        sizes: uploadResults,
-        urls: this.generateImageUrls(printId, imageType),
-        processedAt: new Date()
+        urls: this.generateImageUrls(printId, imageType)
       }
 
       logger.info('Image processing completed successfully', {
@@ -96,9 +94,8 @@ export class ImageProcessingService {
       return {
         success: false,
         printId,
-        imageType,
-        error: (error as Error).message,
-        processedAt: new Date()
+        imageType: imageType as any,
+        error: (error as Error).message
       }
     }
   }
@@ -165,14 +162,21 @@ export class ImageProcessingService {
     printId: string,
     imageType: string
   ): Promise<Record<ImageSize, Buffer>> {
-    const processedImages: Record<ImageSize, Buffer> = {}
+    const processedImages: Record<ImageSize, Buffer> = {
+      thumbnail: Buffer.alloc(0),
+      small: Buffer.alloc(0),
+      normal: Buffer.alloc(0),
+      large: Buffer.alloc(0),
+      original: Buffer.alloc(0)
+    }
 
     // Define size configurations
     const sizeConfigs: Record<ImageSize, { width: number; height?: number; quality: number }> = {
       thumbnail: { width: 150, height: 209, quality: 80 },
       small: { width: 300, height: 418, quality: 85 },
-      medium: { width: 488, height: 680, quality: 90 },
-      large: { width: 672, height: 936, quality: 95 }
+      normal: { width: 488, height: 680, quality: 90 },
+      large: { width: 672, height: 936, quality: 95 },
+      original: { width: 0, quality: 100 } // Original size
     }
 
     for (const [size, config] of Object.entries(sizeConfigs) as [ImageSize, typeof sizeConfigs[ImageSize]][]) {
@@ -226,10 +230,16 @@ export class ImageProcessingService {
     printId: string,
     imageType: string
   ): Promise<Record<ImageSize, { size: number; key: string }>> {
-    const uploadResults: Record<ImageSize, { size: number; key: string }> = {}
+    const uploadResults: Record<ImageSize, { size: number; key: string }> = {
+      thumbnail: { size: 0, key: '' },
+      small: { size: 0, key: '' },
+      normal: { size: 0, key: '' },
+      large: { size: 0, key: '' },
+      original: { size: 0, key: '' }
+    }
 
     // Ensure bucket exists
-    await this.ensureBucketExists(this.config.minioBucketName)
+    await this.ensureBucketExists(this.config.minioBucketName || 'images')
 
     for (const [size, buffer] of Object.entries(processedImages) as [ImageSize, Buffer][]) {
       try {
@@ -244,7 +254,7 @@ export class ImageProcessingService {
         })
 
         await this.minioClient.putObject(
-          this.config.minioBucketName,
+          this.config.minioBucketName || 'images',
           key,
           buffer,
           buffer.length,
@@ -298,9 +308,15 @@ export class ImageProcessingService {
    */
   private generateImageUrls(printId: string, imageType: string): Record<ImageSize, string> {
     const baseUrl = this.config.cdnBaseUrl || this.generateMinioBaseUrl()
-    const urls: Record<ImageSize, string> = {}
+    const urls: Record<ImageSize, string> = {
+      thumbnail: '',
+      small: '',
+      normal: '',
+      large: '',
+      original: ''
+    }
 
-    const sizes: ImageSize[] = ['thumbnail', 'small', 'medium', 'large']
+    const sizes: ImageSize[] = ['thumbnail', 'small', 'normal', 'large', 'original']
     
     for (const size of sizes) {
       const key = this.generateImageKey(printId, imageType, size)
@@ -319,7 +335,7 @@ export class ImageProcessingService {
       ? `:${this.config.minioPort}` 
       : ''
     
-    return `${protocol}://${this.config.minioEndpoint}${port}/${this.config.minioBucketName}`
+    return `${protocol}://${this.config.minioEndpoint}${port}/${this.config.minioBucketName || 'images'}`
   }
 
   /**
@@ -361,13 +377,13 @@ export class ImageProcessingService {
    */
   async deleteImage(printId: string, imageType: string): Promise<void> {
     try {
-      const sizes: ImageSize[] = ['thumbnail', 'small', 'medium', 'large']
+      const sizes: ImageSize[] = ['thumbnail', 'small', 'normal', 'large', 'original']
       
       for (const size of sizes) {
         const key = this.generateImageKey(printId, imageType, size)
         
         try {
-          await this.minioClient.removeObject(this.config.minioBucketName, key)
+          await this.minioClient.removeObject(this.config.minioBucketName || 'images', key)
           logger.debug('Deleted image from MinIO', { printId, imageType, size, key })
         } catch (error) {
           // Don't fail if individual image doesn't exist
@@ -399,7 +415,7 @@ export class ImageProcessingService {
   }> {
     try {
       const key = this.generateImageKey(printId, imageType, size)
-      const stat = await this.minioClient.statObject(this.config.minioBucketName, key)
+      const stat = await this.minioClient.statObject(this.config.minioBucketName || 'images', key)
       
       return {
         exists: true,
@@ -420,10 +436,11 @@ export class ImageProcessingService {
   async healthCheck(): Promise<{ healthy: boolean; error?: string }> {
     try {
       // Test MinIO connection
-      const bucketExists = await this.minioClient.bucketExists(this.config.minioBucketName)
+      const bucketName = this.config.minioBucketName || 'images'
+      const bucketExists = await this.minioClient.bucketExists(bucketName)
       
       if (!bucketExists) {
-        return { healthy: false, error: `Bucket ${this.config.minioBucketName} does not exist` }
+        return { healthy: false, error: `Bucket ${bucketName} does not exist` }
       }
 
       // Test Sharp processing with a small test image

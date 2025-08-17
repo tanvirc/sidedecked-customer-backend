@@ -77,7 +77,7 @@ export class SearchService {
         typoTolerance: true,
         minWordSizefor1Typo: 4,
         minWordSizefor2Typos: 8,
-        removeWordsIfNoResults: 'lastWords',
+        removeWordsIfNoResults: 'lastWords' as const,
         separatorsToIndex: '+#',
         replicas: [
           `${this.config.indexName}_name_asc`,

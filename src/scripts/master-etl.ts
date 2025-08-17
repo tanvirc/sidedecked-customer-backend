@@ -11,7 +11,11 @@
  *   npm run etl -- --game=MTG --type=full
  */
 
+// Disable TypeORM query logging for cleaner ETL output
+process.env.DISABLE_TYPEORM_LOGGING = 'true'
+
 import { program } from 'commander'
+import { DataSource } from 'typeorm'
 import { AppDataSource } from '../config/database'
 import { ETLService } from '../../packages/tcg-catalog/src/services/ETLService'
 import { ETLJobType } from '../../packages/tcg-catalog/src/entities/ETLJob'
@@ -30,7 +34,7 @@ interface ETLOptions {
 async function initializeDatabase(): Promise<void> {
   try {
     await AppDataSource.initialize()
-    logger.info('Database connection established')
+    logger.info('🗄️  Database connection established')
   } catch (error) {
     logger.error('Failed to initialize database', error as Error)
     throw error
@@ -127,7 +131,7 @@ async function runETLForGame(gameCode: string, options: ETLOptions): Promise<voi
       forceUpdate: options.forceUpdate
     })
 
-    const result = await etlService.startETLJob(gameCode, jobType as any, 'manual')
+    const result = await etlService.startETLJob(gameCode, jobType as any, 'manual', options.limit)
 
     logger.info(`ETL completed for ${gameCode}`, {
       success: result.success,

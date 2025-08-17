@@ -5,7 +5,7 @@ export * from './entities/Print'
 export * from './entities/CardSet'
 export * from './entities/CatalogSKU'
 export { CardImage } from './entities/CardImage' // Export only the entity, not the enums
-export * from './entities/ETLJob'
+export { ETLJob } from './entities/ETLJob' // Export only the entity, not the enums
 export * from './entities/Format'
 
 // Services

@@ -47,7 +47,8 @@ export class ETLService {
   async startETLJob(
     gameCode: string, 
     jobType: ETLJobType,
-    triggeredBy: string = 'manual'
+    triggeredBy: string = 'manual',
+    limit?: number
   ): Promise<ETLResult> {
     const jobId = await this.createETLJob(gameCode, jobType, triggeredBy)
     
@@ -64,7 +65,7 @@ export class ETLService {
         throw new Error(`Game not found: ${gameCode}`)
       }
 
-      const result = await this.processETLJob(jobId, game, jobType)
+      const result = await this.processETLJob(jobId, game, jobType, limit)
       
       await this.completeETLJob(jobId, result)
       logger.etlCompleted(jobId, gameCode, result)
@@ -87,7 +88,8 @@ export class ETLService {
   private async processETLJob(
     jobId: string,
     game: Game,
-    jobType: ETLJobType
+    jobType: ETLJobType,
+    limit?: number
   ): Promise<ETLResult> {
     const startTime = Date.now()
     const result: ETLResult = {
@@ -105,12 +107,25 @@ export class ETLService {
       errors: []
     }
 
+    // Track statistics for comprehensive summary
+    let cardsSkipped = 0
+    let setsCreated = 0
+
     try {
       // Get data from external API
       const dataTransformer = this.getDataTransformer(game.apiProvider!)
-      const cards = await dataTransformer.fetchCards(game, jobType)
+      const cards = await dataTransformer.fetchCards(game, jobType, limit)
       
       result.totalProcessed = cards.length
+      
+      // Log expectations - what we're about to process
+      logger.etlExpectations(
+        game.code, 
+        cards.length, 
+        `API call for ${jobType} with limit ${limit || 'unlimited'}`,
+        jobId
+      )
+      
       await this.updateETLJobProgress(jobId, 0, cards.length)
 
       // Process in batches
@@ -120,7 +135,7 @@ export class ETLService {
         const batch = batches[i]
         
         try {
-          const batchResult = await this.processBatch(batch, game)
+          const batchResult = await this.processBatch(batch, game, jobId)
           
           // Aggregate results
           result.cardsCreated += batchResult.cardsCreated
@@ -129,6 +144,8 @@ export class ETLService {
           result.printsUpdated += batchResult.printsUpdated
           result.skusGenerated += batchResult.skusGenerated
           result.imagesQueued += batchResult.imagesQueued
+          cardsSkipped += batchResult.cardsSkipped || 0
+          setsCreated += batchResult.setsCreated || 0
           
           // Update progress
           const processed = (i + 1) * this.config.batchSize
@@ -158,6 +175,19 @@ export class ETLService {
       result.duration = Date.now() - startTime
       result.success = result.errors.length === 0
       
+      // Log comprehensive summary
+      logger.etlSummary(game.code, {
+        expected: result.totalProcessed,
+        imported: result.cardsCreated,
+        updated: result.cardsUpdated,
+        skipped: cardsSkipped,
+        failed: result.errors.length,
+        printsCreated: result.printsCreated,
+        setsCreated: setsCreated,
+        skusGenerated: result.skusGenerated,
+        duration: result.duration
+      }, jobId)
+      
       return result
       
     } catch (error) {
@@ -177,13 +207,15 @@ export class ETLService {
   /**
    * Process a batch of cards with transaction handling
    */
-  private async processBatch(cards: UniversalCard[], game: Game): Promise<{
+  private async processBatch(cards: UniversalCard[], game: Game, jobId?: string): Promise<{
     cardsCreated: number
     cardsUpdated: number
     printsCreated: number
     printsUpdated: number
     skusGenerated: number
     imagesQueued: number
+    cardsSkipped: number
+    setsCreated: number
   }> {
     const result = {
       cardsCreated: 0,
@@ -191,12 +223,19 @@ export class ETLService {
       printsCreated: 0,
       printsUpdated: 0,
       skusGenerated: 0,
-      imagesQueued: 0
+      imagesQueued: 0,
+      cardsSkipped: 0,
+      setsCreated: 0
     }
+
+    const createdSets = new Set<string>() // Track unique sets created
 
     return await AppDataSource.transaction(async (manager) => {
       for (const cardData of cards) {
         try {
+          // Log that we're processing this card
+          logger.cardProcessing(cardData.name, game.code, 'processing', jobId)
+          
           // Generate hashes for deduplication
           cardData.oracleHash = generateOracleHash({
             name: cardData.name,
@@ -204,6 +243,18 @@ export class ETLService {
             text: cardData.oracleText,
             gameSpecific: this.extractGameSpecificData(cardData)
           })
+
+          // Check if card already exists to determine if we'll skip or update
+          const existingCard = await manager.findOne(Card, {
+            where: { oracleHash: cardData.oracleHash }
+          })
+
+          if (existingCard && !this.config.forceUpdate) {
+            // Skip duplicate card
+            logger.cardSkipped(cardData.name, 'duplicate_oracle_hash', cardData.oracleHash, game.code, jobId)
+            result.cardsSkipped++
+            continue
+          }
 
           // Upsert card
           const card = await this.upsertCard(cardData, game, manager)
@@ -214,6 +265,9 @@ export class ETLService {
           }
 
           // Process prints
+          let cardPrintsCreated = 0
+          let cardSkusCreated = 0
+          
           for (const printData of cardData.prints) {
             printData.printHash = generatePrintHash({
               oracleHash: cardData.oracleHash,
@@ -225,6 +279,10 @@ export class ETLService {
             const print = await this.upsertPrint(printData, card.id, manager)
             if (print.isNew) {
               result.printsCreated++
+              cardPrintsCreated++
+              
+              // Track set creation
+              createdSets.add(printData.setCode)
             } else {
               result.printsUpdated++
             }
@@ -232,6 +290,7 @@ export class ETLService {
             // Generate SKUs
             const skus = await this.generateSKUsForPrint(print, manager)
             result.skusGenerated += skus.length
+            cardSkusCreated += skus.length
 
             // Queue image processing if not skipping images
             if (!this.config.skipImages && printData.images) {
@@ -239,8 +298,20 @@ export class ETLService {
               result.imagesQueued++
             }
           }
+
+          // Log successful card import
+          logger.cardImported(
+            cardData.name, 
+            game.code, 
+            cardPrintsCreated, 
+            cardSkusCreated, 
+            !card.isNew, 
+            jobId
+          )
           
         } catch (error) {
+          // Log failed card processing
+          logger.cardProcessing(cardData.name, game.code, 'failed', jobId)
           logger.error('Failed to process card', error as Error, { 
             cardName: cardData.name,
             gameCode: game.code
@@ -249,44 +320,45 @@ export class ETLService {
         }
       }
 
+      // Set final counts
+      result.setsCreated = createdSets.size
+
       return result
     })
   }
 
   /**
-   * Upsert card with duplicate detection
+   * Upsert card (assumes duplicate check already done in processBatch)
    */
   private async upsertCard(cardData: UniversalCard, game: Game, manager: any): Promise<{
     id: string
     isNew: boolean
   }> {
-    // Check if card already exists by oracle hash
+    // Check if card already exists by oracle hash (for updates)
     let existingCard = await manager.findOne(Card, {
       where: { oracleHash: cardData.oracleHash }
     })
 
     if (existingCard) {
-      // Update existing card if force update is enabled
-      if (this.config.forceUpdate) {
-        await manager.update(Card, { id: existingCard.id }, {
-          name: cardData.name,
-          normalizedName: cardData.normalizedName,
-          primaryType: cardData.primaryType,
-          subtypes: cardData.subtypes,
-          oracleText: cardData.oracleText,
-          flavorText: cardData.flavorText,
-          keywords: cardData.keywords,
-          // Game-specific fields
-          manaCost: cardData.manaCost,
-          manaValue: cardData.manaValue,
-          colors: cardData.colors,
-          hp: cardData.hp,
-          attribute: cardData.attribute,
-          // Extended attributes
-          extendedAttributes: cardData.extendedAttributes || {},
-          updatedAt: new Date()
-        })
-      }
+      // Update existing card (only when force update is enabled)
+      await manager.update(Card, { id: existingCard.id }, {
+        name: cardData.name,
+        normalizedName: cardData.normalizedName,
+        primaryType: cardData.primaryType,
+        subtypes: cardData.subtypes,
+        oracleText: cardData.oracleText,
+        flavorText: cardData.flavorText,
+        keywords: cardData.keywords,
+        // Game-specific fields
+        manaCost: cardData.manaCost,
+        manaValue: cardData.manaValue,
+        colors: cardData.colors,
+        hp: cardData.hp,
+        attribute: cardData.attribute,
+        // Extended attributes
+        extendedAttributes: cardData.extendedAttributes || {},
+        updatedAt: new Date()
+      })
       
       return { id: existingCard.id, isNew: false }
     }
@@ -683,6 +755,34 @@ export class ETLService {
     // Image processing disabled for standalone ETL
     logger.debug('Image processing skipped (not available in standalone mode)', { printId })
     return
+  }
+
+  /**
+   * Sync MTG cards from Scryfall
+   */
+  async syncMTGCards(): Promise<ETLResult> {
+    return this.startETLJob('MTG', ETLJobType.FULL_SYNC, 'automated')
+  }
+
+  /**
+   * Sync Pokemon cards from Pokemon TCG API
+   */
+  async syncPokemonCards(): Promise<ETLResult> {
+    return this.startETLJob('POKEMON', ETLJobType.FULL_SYNC, 'automated')
+  }
+
+  /**
+   * Sync Yu-Gi-Oh cards from YGOPRODeck API
+   */
+  async syncYuGiOhCards(): Promise<ETLResult> {
+    return this.startETLJob('YUGIOH', ETLJobType.FULL_SYNC, 'automated')
+  }
+
+  /**
+   * Sync One Piece cards from OP TCG API
+   */
+  async syncOnePieceCards(): Promise<ETLResult> {
+    return this.startETLJob('ONEPIECE', ETLJobType.FULL_SYNC, 'automated')
   }
 }
 
