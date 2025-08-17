@@ -28,7 +28,7 @@ export class Card {
   gameId: string
 
   @ManyToOne(() => Game, game => game.cards)
-  @JoinColumn({ name: 'game_id' })
+  @JoinColumn({ name: 'gameId' })
   game: Game
 
   // Universal identity

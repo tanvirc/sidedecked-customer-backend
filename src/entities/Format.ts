@@ -21,7 +21,7 @@ export class Format {
   gameId: string
 
   @ManyToOne(() => Game, game => game.formats)
-  @JoinColumn({ name: 'game_id' })
+  @JoinColumn({ name: 'gameId' })
   game: Game
 
   @Column({ type: 'varchar', length: 50 })

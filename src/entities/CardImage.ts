@@ -39,7 +39,7 @@ export class CardImage {
   printId: string
 
   @ManyToOne(() => Print, print => print.images, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'print_id' })
+  @JoinColumn({ name: 'printId' })
   print: Print
 
   // Image classification

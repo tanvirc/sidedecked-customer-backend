@@ -24,7 +24,7 @@ export class CardSet {
   gameId: string
 
   @ManyToOne(() => Game, game => game.sets)
-  @JoinColumn({ name: 'game_id' })
+  @JoinColumn({ name: 'gameId' })
   game: Game
 
   // Set identity

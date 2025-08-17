@@ -61,7 +61,7 @@ export class WishlistItem {
 
   // Relationships
   @ManyToOne(() => Wishlist, wishlist => wishlist.items, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'wishlist_id' })
+  @JoinColumn({ name: 'wishlistId' })
   wishlist: Wishlist
 
   // Note: We use catalog_sku as a string reference to avoid circular dependencies

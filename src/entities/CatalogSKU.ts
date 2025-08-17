@@ -25,7 +25,7 @@ export class CatalogSKU {
   printId: string
 
   @ManyToOne(() => Print, print => print.skus)
-  @JoinColumn({ name: 'print_id' })
+  @JoinColumn({ name: 'printId' })
   print: Print
 
   // Universal SKU format: {GAME}-{SET}-{NUMBER}-{LANG}-{CONDITION}-{FINISH}[-{GRADE}]

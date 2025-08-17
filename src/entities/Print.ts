@@ -29,14 +29,14 @@ export class Print {
   cardId: string
 
   @ManyToOne(() => Card, card => card.prints)
-  @JoinColumn({ name: 'card_id' })
+  @JoinColumn({ name: 'cardId' })
   card: Card
 
   @Column({ type: 'uuid' })
   setId: string
 
   @ManyToOne(() => CardSet, set => set.prints)
-  @JoinColumn({ name: 'set_id' })
+  @JoinColumn({ name: 'setId' })
   set: CardSet
 
   // Print identity
