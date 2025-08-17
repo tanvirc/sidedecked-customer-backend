@@ -14,8 +14,11 @@ router.get('/games', async (req, res) => {
   try {
     console.log('DEBUG: Starting games fetch...')
     
-    // Use direct SQL query to avoid entity issues
-    const games = await AppDataSource.query('SELECT * FROM games ORDER BY name ASC')
+    // Use TypeORM repository for type safety and consistency
+    const gameRepository = AppDataSource.getRepository(Game)
+    const games = await gameRepository.find({
+      order: { name: 'ASC' }
+    })
     console.log('DEBUG: Found games:', games.length)
 
     // Return just the data array for frontend compatibility

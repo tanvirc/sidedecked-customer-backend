@@ -2,6 +2,7 @@ import { AppDataSource } from '../config/database'
 import { PriceAlert, AlertType, AlertStatus } from '../entities/PriceAlert'
 import { PriceHistory } from '../entities/PriceHistory'
 import { WishlistItem } from '../entities/WishlistItem'
+import { CatalogSKU } from '../entities/CatalogSKU'
 import { Repository, LessThan, In } from 'typeorm'
 import { logger } from '../config/logger'
 
@@ -349,15 +350,15 @@ export class PriceAlertService {
    */
   private async getCurrentPrice(catalogSku: string): Promise<number | null> {
     try {
-      // Query the latest price from price history or current market data
-      const latestPrice = await AppDataSource.query(`
-        SELECT cs.market_price, cs.min_price, cs.avg_price
-        FROM catalog_skus cs
-        WHERE cs.sku = $1
-      `, [catalogSku])
+      // Use TypeORM repository to get price data with type safety
+      const catalogSKURepository = AppDataSource.getRepository(CatalogSKU)
+      const skuEntity = await catalogSKURepository.findOne({
+        where: { sku: catalogSku },
+        select: ['marketPrice', 'lowestPrice', 'averagePrice']
+      })
 
-      if (latestPrice && latestPrice.length > 0) {
-        return latestPrice[0].market_price || latestPrice[0].avg_price || latestPrice[0].min_price
+      if (skuEntity) {
+        return skuEntity.marketPrice || skuEntity.averagePrice || skuEntity.lowestPrice
       }
 
       return null
@@ -389,16 +390,21 @@ export class PriceAlertService {
    */
   private async getCardDataForSKU(catalogSku: string): Promise<{ card_name: string, game_name: string } | null> {
     try {
-      const cardData = await AppDataSource.query(`
-        SELECT c.name as card_name, g.name as game_name
-        FROM catalog_skus cs
-        LEFT JOIN prints p ON cs.print_id = p.id
-        LEFT JOIN cards c ON p.card_id = c.id
-        LEFT JOIN games g ON c.game_id = g.id
-        WHERE cs.sku = $1
-      `, [catalogSku])
+      // Use TypeORM with proper entity relationships
+      const catalogSKURepository = AppDataSource.getRepository(CatalogSKU)
+      const skuEntity = await catalogSKURepository.findOne({
+        where: { sku: catalogSku },
+        relations: ['print', 'print.card', 'print.card.game']
+      })
 
-      return cardData && cardData.length > 0 ? cardData[0] : null
+      if (skuEntity && skuEntity.print?.card) {
+        return {
+          card_name: skuEntity.print.card.name,
+          game_name: skuEntity.print.card.game?.name || ''
+        }
+      }
+
+      return null
     } catch (error) {
       logger.error(`Error getting card data for SKU ${catalogSku}`, error as Error)
       return null
