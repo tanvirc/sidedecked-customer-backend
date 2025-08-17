@@ -1,6 +1,8 @@
 import { PriceAlertService } from './PriceAlertService'
 import { PriceHistoryService } from './PriceHistoryService'
 import { logger } from '../config/logger'
+import { AppDataSource } from '../config/database'
+import { MarketPrice } from '../entities/MarketPrice'
 
 interface ScheduledJob {
   name: string
@@ -404,13 +406,15 @@ export class JobScheduler {
     try {
       const { AppDataSource } = await import('../config/database')
       
-      const result = await AppDataSource.query(`
-        SELECT DISTINCT catalog_sku
-        FROM market_prices 
-        WHERE last_scraped >= NOW() - INTERVAL '24 hours'
-        AND is_available = true
-        ORDER BY catalog_sku
-      `)
+      // Use TypeORM for simple SELECT DISTINCT query
+      const marketPriceRepo = AppDataSource.getRepository(MarketPrice)
+      const result = await marketPriceRepo
+        .createQueryBuilder('mp')
+        .select('DISTINCT mp.catalog_sku', 'catalog_sku')
+        .where('mp.last_scraped >= NOW() - INTERVAL \'24 hours\'')
+        .andWhere('mp.is_available = :available', { available: true })
+        .orderBy('mp.catalog_sku', 'ASC')
+        .getRawMany()
       
       return result
     } catch (error) {
