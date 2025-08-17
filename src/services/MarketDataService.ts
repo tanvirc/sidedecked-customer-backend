@@ -314,7 +314,7 @@ export class MarketDataService {
 
       const result = {
         stale_records_removed: staleResult.affected || 0,
-        duplicate_records_removed: duplicateResult[1] || 0,
+        duplicate_records_removed: duplicateResult.affected || 0,
         invalid_records_fixed: invalidPricesResult.affected || 0
       }
 
