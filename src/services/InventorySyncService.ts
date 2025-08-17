@@ -98,15 +98,15 @@ export class InventorySyncService {
   private totalResponseTime = 0
 
   constructor() {
-    // Initialize HTTP client for Medusa backend
+    // Initialize HTTP client for Medusa backend with publishable API key
     this.httpClient = axios.create({
       baseURL: config.COMMERCE_BACKEND_URL,
-      timeout: 10000, // 10 second timeout
+      timeout: 10000,
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'SideDecked-CustomerBackend/1.0',
-        ...(config.COMMERCE_API_KEY && {
-          'Authorization': `Bearer ${config.COMMERCE_API_KEY}`
+        ...(config.COMMERCE_PUBLISHABLE_KEY && {
+          'x-publishable-api-key': config.COMMERCE_PUBLISHABLE_KEY
         })
       }
     })
@@ -181,7 +181,7 @@ export class InventorySyncService {
     logger.info('InventorySyncService initialized', {
       commerceBackendUrl: config.COMMERCE_BACKEND_URL,
       cacheTTL: this.cacheTTL,
-      hasApiKey: !!config.COMMERCE_API_KEY
+      hasPublishableKey: !!config.COMMERCE_PUBLISHABLE_KEY
     })
   }
 
@@ -435,9 +435,41 @@ export class InventorySyncService {
       await this.redis.ping()
       health.redis_connected = true
       
-      // Check API accessibility with a lightweight test
-      const testResponse = await this.httpClient.get('/admin/orders?limit=1')
-      health.api_accessible = testResponse.status === 200
+      // Check API accessibility 
+      if (!config.COMMERCE_PUBLISHABLE_KEY) {
+        logger.warn('Publishable API key not configured - inventory sync will be disabled', {
+          suggestion: 'Set COMMERCE_PUBLISHABLE_KEY in environment variables'
+        })
+        health.api_accessible = false
+        health.last_error = 'Publishable API key required for Medusa store endpoints'
+      } else {
+        try {
+          // Use a store endpoint that requires publishable API key
+          const testResponse = await this.httpClient.get('/store/products?limit=1')
+          health.api_accessible = testResponse.status === 200
+          logger.info('Successfully connected to Medusa backend')
+        } catch (apiError) {
+          const errorMsg = (apiError as Error).message
+          if (errorMsg.includes('sales channel')) {
+            logger.warn('Publishable API key needs sales channel configuration', { 
+              error: errorMsg,
+              suggestion: 'Run Medusa seed script or configure sales channels in admin'
+            })
+            health.api_accessible = false
+            health.last_error = 'Publishable API key needs sales channel configuration'
+          } else if (errorMsg.includes('publishable') || errorMsg.includes('api-key')) {
+            logger.warn('Invalid publishable API key - inventory sync will be limited', { 
+              error: errorMsg,
+              suggestion: 'Check COMMERCE_PUBLISHABLE_KEY value'
+            })
+            health.api_accessible = false
+            health.last_error = 'Invalid or missing publishable API key'
+          } else {
+            health.api_accessible = false
+            health.last_error = `API check failed: ${errorMsg}`
+          }
+        }
+      }
       
       health.healthy = health.redis_connected && health.api_accessible
       
@@ -484,28 +516,26 @@ export class InventorySyncService {
     variantId: string, 
     includeLocationBreakdown: boolean
   ): Promise<InventoryItem> {
-    // Try admin endpoint first for detailed data
     try {
-      const response = await this.httpClient.get<MedusaVariantResponse>(
-        `/admin/products/variants/${variantId}`
+      // Use store endpoint which should be accessible with proper auth
+      // Note: Store endpoints may have limited inventory data
+      const response = await this.httpClient.get(
+        `/store/products?variant_id[]=${variantId}&fields=variants.inventory_quantity,variants.manage_inventory`
       )
       
-      return this.transformMedusaVariantToInventoryItem(response.data.variant)
-    } catch (adminError) {
-      // Fallback to store endpoint if admin fails
-      try {
-        const storeResponse = await this.httpClient.get(
-          `/store/products/variants/${variantId}`
+      if (response.data?.products?.[0]?.variants) {
+        const variant = response.data.products[0].variants.find(
+          (v: any) => v.id === variantId
         )
-        
-        return this.transformMedusaVariantToInventoryItem(storeResponse.data.variant)
-      } catch (storeError) {
-        logger.error('Both admin and store API calls failed for variant', storeError as Error, {
-          variantId,
-          adminError: (adminError as Error).message
-        })
-        throw storeError
+        if (variant) {
+          return this.transformMedusaVariantToInventoryItem(variant)
+        }
       }
+      
+      throw new Error(`Variant ${variantId} not found`)
+    } catch (error) {
+      logger.error('Failed to fetch inventory from Medusa', error as Error, { variantId })
+      throw error
     }
   }
 

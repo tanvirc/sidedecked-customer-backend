@@ -11,6 +11,7 @@ export const config = {
   
   // Database
   DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost:5432/sidedecked_db',
+  DB_NAME: process.env.DB_NAME || 'sidedecked_db',
   
   // Redis
   REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
@@ -56,7 +57,9 @@ export const config = {
   
   // Commerce Backend Integration
   COMMERCE_BACKEND_URL: process.env.COMMERCE_BACKEND_URL || 'http://localhost:9000',
-  COMMERCE_API_KEY: process.env.COMMERCE_API_KEY,
+  COMMERCE_PUBLISHABLE_KEY: process.env.COMMERCE_PUBLISHABLE_KEY,
+  COMMERCE_SERVICE_EMAIL: process.env.COMMERCE_SERVICE_EMAIL,
+  COMMERCE_SERVICE_PASSWORD: process.env.COMMERCE_SERVICE_PASSWORD,
   
   // Monitoring
   SENTRY_DSN: process.env.SENTRY_DSN,
