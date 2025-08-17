@@ -126,11 +126,11 @@ router.get('/cards/search', async (req, res) => {
 
     console.log('DEBUG: Searching cards with filters:', { games, types, query, page, limit })
 
-    // Build SQL query with filters
+    // Build SQL query with filters (using correct camelCase column)
     let sqlQuery = `
       SELECT c.*, g.code as game_code, g.name as game_name
       FROM cards c
-      LEFT JOIN games g ON c.game_id = g.id
+      LEFT JOIN games g ON c."gameId" = g.id
       WHERE c.deleted_at IS NULL
     `
     const params: any[] = []
@@ -144,9 +144,9 @@ router.get('/cards/search', async (req, res) => {
       params.push(...gameArray)
     }
 
-    // Text search
+    // Text search (using correct camelCase column names)
     if (query) {
-      sqlQuery += ` AND (c.name ILIKE $${paramIndex} OR c.oracle_text ILIKE $${paramIndex} OR c.flavor_text ILIKE $${paramIndex})`
+      sqlQuery += ` AND (c.name ILIKE $${paramIndex} OR c."oracleText" ILIKE $${paramIndex} OR c."flavorText" ILIKE $${paramIndex})`
       params.push(`%${query}%`)
       paramIndex++
     }
@@ -163,8 +163,8 @@ router.get('/cards/search', async (req, res) => {
 
     const cards = await AppDataSource.query(sqlQuery, params)
     
-    // Get total count (with same filters)
-    let countQuery = 'SELECT COUNT(*) as count FROM cards c LEFT JOIN games g ON c.game_id = g.id WHERE c.deleted_at IS NULL'
+    // Get total count (with same filters, using correct camelCase column)
+    let countQuery = 'SELECT COUNT(*) as count FROM cards c LEFT JOIN games g ON c."gameId" = g.id WHERE c.deleted_at IS NULL'
     let countParams: any[] = []
     let countParamIndex = 1
     
@@ -177,7 +177,7 @@ router.get('/cards/search', async (req, res) => {
     }
     
     if (query) {
-      countQuery += ` AND (c.name ILIKE $${countParamIndex} OR c.oracle_text ILIKE $${countParamIndex} OR c.flavor_text ILIKE $${countParamIndex})`
+      countQuery += ` AND (c.name ILIKE $${countParamIndex} OR c."oracleText" ILIKE $${countParamIndex} OR c."flavorText" ILIKE $${countParamIndex})`
       countParams.push(`%${query}%`)
     }
     
@@ -186,16 +186,16 @@ router.get('/cards/search', async (req, res) => {
 
     console.log('DEBUG: Found cards:', cards.length, 'Total:', totalCount)
 
-    // Convert to search results format
+    // Convert to search results format (using correct camelCase field names)
     const hits = cards.map((card: any) => ({
       card: {
         id: card.id,
         name: card.name,
-        gameId: card.game_id,
+        gameId: card.gameId,
         gameCode: card.game_code,
         gameName: card.game_name,
-        oracleText: card.oracle_text,
-        flavorText: card.flavor_text
+        oracleText: card.oracleText,
+        flavorText: card.flavorText
       },
       print: null,
       relevanceScore: 1.0
