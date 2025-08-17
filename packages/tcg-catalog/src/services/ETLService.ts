@@ -374,10 +374,13 @@ export class ETLService {
       variation: printData.variation,
       frame: printData.frame,
       borderColor: printData.borderColor,
+      // Format legality (from transformer data)
+      ...this.extractFormatLegalityFields(printData.formatLegality),
       // External IDs
       scryfallId: printData.externalIds?.scryfall,
       tcgplayerId: printData.externalIds?.tcgplayer,
       pokemonTcgId: printData.externalIds?.pokemonTcg,
+      yugiohProdeckId: printData.externalIds?.yugiohProdeck,
       // Images
       imageSmall: printData.images?.small,
       imageNormal: printData.images?.normal,
@@ -615,6 +618,62 @@ export class ETLService {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  /**
+   * Extract format legality fields from transformer data
+   */
+  private extractFormatLegalityFields(formatLegality?: Record<string, string>): any {
+    const legalityFields: any = {
+      isLegalStandard: false,
+      isLegalPioneer: false,
+      isLegalModern: false,
+      isLegalLegacy: false,
+      isLegalVintage: false,
+      isLegalCommander: false
+    }
+
+    if (!formatLegality) {
+      return legalityFields
+    }
+
+    // Map transformer format codes to entity fields
+    if (formatLegality.standard === 'legal') {
+      legalityFields.isLegalStandard = true
+    }
+    if (formatLegality.pioneer === 'legal') {
+      legalityFields.isLegalPioneer = true
+    }
+    if (formatLegality.modern === 'legal') {
+      legalityFields.isLegalModern = true
+    }
+    if (formatLegality.legacy === 'legal') {
+      legalityFields.isLegalLegacy = true
+    }
+    if (formatLegality.vintage === 'legal') {
+      legalityFields.isLegalVintage = true
+    }
+    if (formatLegality.commander === 'legal') {
+      legalityFields.isLegalCommander = true
+    }
+
+    // Handle Pokemon-specific formats
+    if (formatLegality.expanded === 'legal') {
+      legalityFields.isLegalModern = true // Map expanded to modern for Pokemon
+    }
+    if (formatLegality.unlimited === 'legal') {
+      legalityFields.isLegalLegacy = true // Map unlimited to legacy for Pokemon
+    }
+
+    // Handle YuGiOh-specific formats
+    if (formatLegality.tcg === 'legal') {
+      legalityFields.isLegalStandard = true // Map TCG to standard for YuGiOh
+    }
+    if (formatLegality.ocg === 'legal') {
+      legalityFields.isLegalModern = true // Map OCG to modern for YuGiOh
+    }
+
+    return legalityFields
   }
 
   /**

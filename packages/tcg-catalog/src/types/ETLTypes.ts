@@ -96,6 +96,9 @@ export interface UniversalPrint {
   frame?: string
   borderColor?: string
 
+  // Format legality
+  formatLegality?: Record<string, string>
+
   // Images
   images?: {
     small?: string

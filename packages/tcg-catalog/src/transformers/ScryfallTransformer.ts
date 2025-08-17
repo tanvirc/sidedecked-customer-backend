@@ -24,6 +24,18 @@ interface ScryfallCard {
   collector_number: string
   rarity: string
   artist?: string
+  legalities?: {
+    standard?: string
+    pioneer?: string
+    modern?: string
+    legacy?: string
+    vintage?: string
+    commander?: string
+    brawl?: string
+    historic?: string
+    pauper?: string
+    penny?: string
+  }
   image_uris?: {
     small?: string
     normal?: string
@@ -128,19 +140,25 @@ export class ScryfallTransformer {
     const baseQuery = '/cards/search?q='
     
     switch (jobType) {
-      case 'full':
+      case ETLJobType.FULL:
+      case ETLJobType.FULL_SYNC:
         return `${baseQuery}game:paper`
-      case 'incremental':
+      case ETLJobType.INCREMENTAL:
+      case ETLJobType.INCREMENTAL_SYNC:
         // Fetch cards from last 7 days
         const sevenDaysAgo = new Date()
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
         const dateStr = sevenDaysAgo.toISOString().split('T')[0]
         return `${baseQuery}game:paper date>=${dateStr}`
-      case 'sets':
+      case ETLJobType.SETS:
         // Fetch only the most recent set
         return `${baseQuery}game:paper is:new`
+      case ETLJobType.BANLIST_UPDATE:
+        // For banlist updates, fetch cards that are legal in major formats
+        return `${baseQuery}game:paper (legal:standard OR legal:pioneer OR legal:modern OR legal:legacy OR legal:vintage OR legal:commander)`
       default:
-        throw new Error(`Unknown job type: ${jobType}`)
+        // Default to recent sets
+        return `${baseQuery}game:paper is:new`
     }
   }
 
@@ -222,6 +240,9 @@ export class ScryfallTransformer {
       frame: scryfallCard.frame,
       borderColor: scryfallCard.border_color,
       
+      // Format legality (from Scryfall API)
+      formatLegality: this.extractFormatLegality(scryfallCard),
+      
       // External IDs
       externalIds: {
         scryfall: scryfallCard.id,
@@ -297,6 +318,45 @@ export class ScryfallTransformer {
     
     const parsed = parseInt(value, 10)
     return isNaN(parsed) ? null : parsed
+  }
+
+  private extractFormatLegality(card: ScryfallCard): Record<string, string> | undefined {
+    if (!card.legalities) {
+      return undefined
+    }
+
+    const legality: Record<string, string> = {}
+
+    // Map Scryfall legality to our format codes
+    if (card.legalities.standard) {
+      legality.standard = card.legalities.standard
+    }
+    if (card.legalities.pioneer) {
+      legality.pioneer = card.legalities.pioneer
+    }
+    if (card.legalities.modern) {
+      legality.modern = card.legalities.modern
+    }
+    if (card.legalities.legacy) {
+      legality.legacy = card.legalities.legacy
+    }
+    if (card.legalities.vintage) {
+      legality.vintage = card.legalities.vintage
+    }
+    if (card.legalities.commander) {
+      legality.commander = card.legalities.commander
+    }
+    if (card.legalities.brawl) {
+      legality.brawl = card.legalities.brawl
+    }
+    if (card.legalities.historic) {
+      legality.historic = card.legalities.historic
+    }
+    if (card.legalities.pauper) {
+      legality.pauper = card.legalities.pauper
+    }
+
+    return Object.keys(legality).length > 0 ? legality : undefined
   }
 
   private sleep(ms: number): Promise<void> {

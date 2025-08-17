@@ -209,17 +209,26 @@ export class OnePieceTransformer {
     const params: Record<string, any> = {}
 
     switch (jobType) {
-      case 'full':
+      case ETLJobType.FULL:
+      case ETLJobType.FULL_SYNC:
         // No additional filters
         break
-      case 'incremental':
+      case ETLJobType.INCREMENTAL:
+      case ETLJobType.INCREMENTAL_SYNC:
         // Fetch cards from last 30 days
         const thirtyDaysAgo = new Date()
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
         params.since = thirtyDaysAgo.toISOString().split('T')[0]
         break
-      case 'sets':
+      case ETLJobType.SETS:
         // Fetch only from latest set
+        params.latest_set = true
+        break
+      case ETLJobType.BANLIST_UPDATE:
+        // For banlist updates, get all cards (mock API limitation)
+        break
+      default:
+        // Default to latest set
         params.latest_set = true
         break
     }
@@ -312,6 +321,9 @@ export class OnePieceTransformer {
       frame: 'normal',
       borderColor: 'black',
       
+      // Basic format legality for One Piece
+      formatLegality: this.extractFormatLegality(onePieceCard),
+      
       externalIds: {
         pokemonTcg: onePieceCard.id // Temporary: will be fixed when official API available
       },
@@ -397,6 +409,14 @@ export class OnePieceTransformer {
 
   private isPromo(rarity: string): boolean {
     return rarity.includes('Promo') || rarity.includes('Prize')
+  }
+
+  private extractFormatLegality(card: OnePieceCard): Record<string, string> | undefined {
+    // Basic format legality for One Piece
+    // Since there's no official API yet, we assume all cards are legal in standard format
+    return {
+      standard: 'legal'
+    }
   }
 
   private sleep(ms: number): Promise<void> {

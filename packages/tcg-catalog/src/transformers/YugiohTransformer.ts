@@ -113,15 +113,25 @@ export class YugiohTransformer {
     }
 
     switch (jobType) {
-      case 'full':
+      case ETLJobType.FULL:
+      case ETLJobType.FULL_SYNC:
         // No additional filters - get all cards
         break
-      case 'incremental':
+      case ETLJobType.INCREMENTAL:
+      case ETLJobType.INCREMENTAL_SYNC:
         // YGOPro doesn't support date filtering, so we'll get all and filter later
         // This is a limitation of their API
         break
-      case 'sets':
+      case ETLJobType.SETS:
         // Get cards from recent sets only
+        params.startdate = '2023-01-01'
+        break
+      case ETLJobType.BANLIST_UPDATE:
+        // For banlist updates, get all cards (YGOPro API limitation)
+        params.banlist = 'tcg'
+        break
+      default:
+        // Default to recent sets
         params.startdate = '2023-01-01'
         break
     }
@@ -204,6 +214,9 @@ export class YugiohTransformer {
         frame: 'normal',
         borderColor: 'black',
         
+        // Basic format legality for YuGiOh
+        formatLegality: this.extractFormatLegality(yugiohCard),
+        
         externalIds: {
           yugiohProdeck: yugiohCard.id.toString()
         },
@@ -235,6 +248,9 @@ export class YugiohTransformer {
       variation: undefined,
       frame: 'normal',
       borderColor: 'black',
+      
+      // Basic format legality for YuGiOh
+      formatLegality: this.extractFormatLegality(yugiohCard),
       
       externalIds: {
         yugiohProdeck: yugiohCard.id.toString()
@@ -367,6 +383,16 @@ export class YugiohTransformer {
       return 'foil'
     }
     return 'normal'
+  }
+
+  private extractFormatLegality(card: YugiohCard): Record<string, string> | undefined {
+    // Basic format legality for YuGiOh
+    // Since YGOPro API doesn't provide banlist info, we assume all cards are legal in TCG
+    // In a production system, this would need to cross-reference with banlist APIs
+    return {
+      tcg: 'legal',
+      ocg: 'legal'
+    }
   }
 
   private extractPrices(card: YugiohCard, setIndex: number): { usd?: number } | undefined {

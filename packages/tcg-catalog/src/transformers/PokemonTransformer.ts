@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios'
+import { PokemonTCG } from 'pokemon-tcg-sdk-typescript'
 import { Game } from '../entities/Game'
 import { ETLJobType } from '../entities/ETLJob'
 import { UniversalCard, UniversalPrint } from '../types/ETLTypes'
@@ -103,76 +103,84 @@ interface PokemonResponse {
 }
 
 export class PokemonTransformer {
-  private client: AxiosInstance
-  private readonly baseUrl = 'https://api.pokemontcg.io/v2'
-  private readonly rateLimit = 200 // milliseconds between requests
+  private readonly rateLimit = 1000 // milliseconds between requests for SDK safety
   private readonly apiKey: string
 
   constructor() {
     this.apiKey = process.env.POKEMON_TCG_API_KEY || ''
     
-    this.client = axios.create({
-      baseURL: this.baseUrl,
-      timeout: 30000,
-      headers: {
-        'User-Agent': 'SideDecked/1.0 (marketplace@sidedecked.com)',
-        ...(this.apiKey && { 'X-Api-Key': this.apiKey })
-      }
-    })
-
-    // Rate limiting interceptor
-    this.client.interceptors.request.use(async (config) => {
-      await this.sleep(this.rateLimit)
-      return config
-    })
+    // Configure Pokemon TCG SDK
+    if (this.apiKey) {
+      process.env.POKEMONTCG_API_KEY = this.apiKey
+      logger.debug('Pokemon TCG SDK configured with API key')
+    } else {
+      logger.warn('No Pokemon TCG API key found - using rate-limited requests')
+    }
   }
 
   async fetchCards(game: Game, jobType: ETLJobType): Promise<UniversalCard[]> {
-    logger.info('Starting Pokemon TCG data fetch', { gameCode: game.code, jobType })
+    logger.info('Starting Pokemon TCG data fetch using SDK', { gameCode: game.code, jobType })
 
     try {
       let allCards: PokemonCard[] = []
-      let page = 1
-      const pageSize = 250 // Pokemon API max page size
+      
+      // Use Pokemon TCG SDK instead of direct API calls
+      const query = this.buildQuery(jobType)
+      logger.debug('Pokemon TCG query', { query })
 
-      while (true) {
-        logger.debug('Fetching Pokemon TCG page', { page, pageSize })
-        
-        const query = this.buildQuery(jobType)
-        const response = await this.client.get<PokemonResponse>('/cards', {
-          params: {
+      if (jobType === 'full') {
+        // For full sync, get all cards with pagination
+        let page = 1
+        const pageSize = 250
+
+        while (true) {
+          logger.debug('Fetching Pokemon TCG page using SDK', { page, pageSize })
+          
+          const cards = await PokemonTCG.findCardsByQueries({
             q: query,
             page,
             pageSize,
             orderBy: 'set.releaseDate'
+          })
+
+          if (!cards || cards.length === 0) {
+            break
           }
+
+          allCards.push(...cards)
+
+          logger.debug('Fetched Pokemon TCG page using SDK', {
+            cardsThisPage: cards.length,
+            totalCardsSoFar: allCards.length,
+            page
+          })
+
+          if (cards.length < pageSize) {
+            break
+          }
+
+          page++
+
+          // Safety check
+          if (allCards.length > 50000) {
+            logger.warn('Reached maximum card limit, stopping fetch', { totalCards: allCards.length })
+            break
+          }
+
+          // Rate limiting between requests
+          await this.sleep(this.rateLimit)
+        }
+      } else {
+        // For incremental or limited syncs, get a smaller batch
+        const cards = await PokemonTCG.findCardsByQueries({
+          q: query,
+          pageSize: 100
         })
 
-        const data = response.data
-        allCards.push(...data.data)
-
-        logger.debug('Fetched Pokemon TCG page', {
-          cardsThisPage: data.data.length,
-          totalCardsSoFar: allCards.length,
-          page: data.page,
-          totalCount: data.totalCount
-        })
-
-        // Check if we have more pages
-        if (data.data.length < pageSize || allCards.length >= data.totalCount) {
-          break
-        }
-
-        page++
-
-        // Safety check
-        if (allCards.length > 50000) {
-          logger.warn('Reached maximum card limit, stopping fetch', { totalCards: allCards.length })
-          break
-        }
+        allCards.push(...cards)
       }
 
-      logger.info('Completed Pokemon TCG data fetch', {
+      logger.info('Completed Pokemon TCG data fetch using SDK', {
         gameCode: game.code,
         totalCards: allCards.length
       })
@@ -180,7 +188,7 @@ export class PokemonTransformer {
       return this.transformToUniversal(allCards)
 
     } catch (error) {
-      logger.error('Failed to fetch Pokemon TCG data', error as Error, {
+      logger.error('Failed to fetch Pokemon TCG data using SDK', error as Error, {
         gameCode: game.code,
         jobType
       })
@@ -190,19 +198,25 @@ export class PokemonTransformer {
 
   private buildQuery(jobType: ETLJobType): string {
     switch (jobType) {
-      case 'full':
-        return '!set.id:*promo*' // Exclude promo sets for now
-      case 'incremental':
+      case ETLJobType.FULL:
+      case ETLJobType.FULL_SYNC:
+        return '!set.id:*promo*' // Exclude promo sets for full sync
+      case ETLJobType.INCREMENTAL:
+      case ETLJobType.INCREMENTAL_SYNC:
         // Fetch cards from sets updated in last 30 days
         const thirtyDaysAgo = new Date()
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
         const dateStr = thirtyDaysAgo.toISOString().split('T')[0]
         return `set.updatedAt:[${dateStr} TO *]`
-      case 'sets':
-        // Fetch only from the latest set
-        return 'set.series:"Sword & Shield"' // Adjust as needed
+      case ETLJobType.SETS:
+        // Fetch only from the latest sets
+        return 'set.series:"Scarlet & Violet"' // Latest Pokemon series
+      case ETLJobType.BANLIST_UPDATE:
+        // For banlist updates, fetch cards that have format legality
+        return 'legalities.standard:legal OR legalities.expanded:legal OR legalities.unlimited:legal'
       default:
-        throw new Error(`Unknown job type: ${jobType}`)
+        // Default to recent sets for other job types
+        return 'set.series:"Scarlet & Violet"'
     }
   }
 
@@ -290,6 +304,9 @@ export class PokemonTransformer {
       variation: undefined,
       frame: 'normal',
       borderColor: 'black',
+      
+      // Format legality (from Pokemon API)
+      formatLegality: this.extractFormatLegality(pokemonCard),
       
       // External IDs
       externalIds: {
@@ -476,6 +493,26 @@ export class PokemonTransformer {
     }
 
     return usdPrice ? { usd: usdPrice } : undefined
+  }
+
+  private extractFormatLegality(card: PokemonCard): Record<string, string> | undefined {
+    if (!card.legalities) {
+      return undefined
+    }
+
+    const legality: Record<string, string> = {}
+
+    if (card.legalities.standard) {
+      legality.standard = card.legalities.standard
+    }
+    if (card.legalities.expanded) {
+      legality.expanded = card.legalities.expanded
+    }
+    if (card.legalities.unlimited) {
+      legality.unlimited = card.legalities.unlimited
+    }
+
+    return Object.keys(legality).length > 0 ? legality : undefined
   }
 
   private sleep(ms: number): Promise<void> {
