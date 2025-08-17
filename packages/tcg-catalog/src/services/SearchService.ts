@@ -11,7 +11,7 @@ import {
 } from '../types/SearchTypes'
 import { logger, logTiming } from '../utils/Logger'
 import { GAME_CODES, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT } from '../utils/Constants'
-import { Card } from '../entities/Game'
+import { Card } from '../entities/Card'
 
 export class SearchService {
   private client: SearchClient
@@ -100,8 +100,16 @@ export class SearchService {
       for (const replica of replicas) {
         const replicaIndex = this.client.initIndex(replica.name)
         await replicaIndex.setSettings({
-          ...cardsSettings,
-          customRanking: replica.customRanking
+          customRanking: replica.customRanking,
+          searchableAttributes: cardsSettings.searchableAttributes,
+          attributesForFaceting: cardsSettings.attributesForFaceting,
+          ranking: cardsSettings.ranking,
+          typoTolerance: cardsSettings.typoTolerance,
+          minWordSizefor1Typo: cardsSettings.minWordSizefor1Typo,
+          minWordSizefor2Typos: cardsSettings.minWordSizefor2Typos,
+          removeWordsIfNoResults: cardsSettings.removeWordsIfNoResults as 'lastWords',
+          separatorsToIndex: cardsSettings.separatorsToIndex,
+          replicas: cardsSettings.replicas
         })
       }
 
@@ -175,7 +183,7 @@ export class SearchService {
         highlightPostTag: '</mark>'
       })
 
-      const suggestions = result.hits.map(hit => ({
+      const suggestions = result.hits.map((hit: any) => ({
         type: 'card' as const,
         value: hit.name,
         count: 1, // TODO: Implement frequency counting

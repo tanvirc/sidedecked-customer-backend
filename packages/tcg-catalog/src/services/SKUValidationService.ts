@@ -1,4 +1,4 @@
-import { AppDataSource } from '../../../../apps/api/src/config/database'
+import { AppDataSource } from '../../../../src/config/database'
 import { CatalogSKU } from '../entities/CatalogSKU'
 import { Print } from '../entities/Print'
 import { Card } from '../entities/Card'

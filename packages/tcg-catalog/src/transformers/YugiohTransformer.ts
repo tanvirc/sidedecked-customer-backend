@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios'
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid'
 import { Game } from '../../../../src/entities/Game'
 import { ETLJobType } from '../entities/ETLJob'
 import { UniversalCard, UniversalPrint } from '../types/ETLTypes'
@@ -141,10 +142,12 @@ export class YugiohTransformer {
 
   private transformToUniversal(yugiohCards: YugiohCard[]): UniversalCard[] {
     const universalCards: UniversalCard[] = []
+    // Use a fixed namespace UUID for Yu-Gi-Oh! cards to ensure consistent generation
+    const YUGIOH_NAMESPACE = '6ba7b814-9dad-11d1-80b4-00c04fd430c8' // Using DNS namespace UUID
 
     for (const card of yugiohCards) {
-      // YuGiOh cards don't have oracle IDs, so we create one based on the card ID
-      const oracleId = `yugioh_${card.id}`
+      // Generate a deterministic UUID based on the card ID
+      const oracleId = uuidv5(`yugioh_${card.id}`, YUGIOH_NAMESPACE)
       
       const universalCard: UniversalCard = {
         oracleId,

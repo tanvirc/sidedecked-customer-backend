@@ -19,6 +19,26 @@ export interface ImageProcessingConfig {
   }
   maxRetries: number
   retryDelayMs: number
+  // MinIO specific config
+  minioEndpoint?: string
+  minioPort?: number
+  minioUseSSL?: boolean
+  minioAccessKey?: string
+  minioSecretKey?: string
+  minioBucketName?: string
+}
+
+export type ImageSize = 'thumbnail' | 'small' | 'normal' | 'large' | 'original'
+export type ImageFormat = 'webp' | 'jpeg' | 'jpg' | 'png'
+
+export interface ImageProcessingResult {
+  success: boolean
+  printId?: string
+  imageType?: ImageType
+  urls?: StorageUrls
+  blurhash?: string
+  metadata?: ImageMetadata
+  error?: string
 }
 
 export interface ProcessImageRequest {
@@ -70,6 +90,7 @@ export interface StorageUrls {
   normal: string
   large: string
   original: string
+  [key: string]: string // Index signature for compatibility
 }
 
 export interface CDNUrls {

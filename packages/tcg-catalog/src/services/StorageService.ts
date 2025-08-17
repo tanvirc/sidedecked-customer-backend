@@ -18,8 +18,10 @@ export class StorageService {
   private bucket: string
   private cdnBaseUrl?: string
   private imageProcessor?: ImageProcessingService
+  private config: StorageConfig
 
   constructor(config: StorageConfig, cdnBaseUrl?: string) {
+    this.config = config
     this.client = new MinioClient({
       endPoint: config.endpoint,
       port: config.port || (config.useSSL ? 443 : 80),
@@ -34,13 +36,32 @@ export class StorageService {
     
     // Initialize image processor
     const imageConfig: ImageProcessingConfig = {
+      storageProvider: 'minio',
+      bucket: config.bucket,
+      cdnBaseUrl,
+      enableWebP: true,
+      enableBlurhash: true,
+      compressionQuality: {
+        thumbnail: 80,
+        small: 85,
+        normal: 90,
+        large: 95,
+        original: 100
+      },
+      sizes: {
+        thumbnail: { width: 146, height: 204 },
+        small: { width: 244, height: 340 },
+        normal: { width: 488, height: 680 },
+        large: { width: 745, height: 1040 }
+      },
+      maxRetries: 3,
+      retryDelayMs: 1000,
       minioEndpoint: config.endpoint,
       minioPort: config.port || (config.useSSL ? 443 : 80),
       minioUseSSL: config.useSSL ?? true,
       minioAccessKey: config.accessKey,
       minioSecretKey: config.secretKey,
-      minioBucketName: config.bucket,
-      cdnBaseUrl
+      minioBucketName: config.bucket
     }
     this.imageProcessor = new ImageProcessingService(imageConfig)
     
@@ -376,10 +397,10 @@ export class StorageService {
       return `${this.cdnBaseUrl}/${key}`
     }
     
-    // Fall back to MinIO public URL
-    const protocol = this.client.protocol
-    const host = this.client.host
-    const port = this.client.port
+    // Fall back to MinIO public URL using config
+    const protocol = this.config.useSSL ? 'https:' : 'http:'
+    const host = this.config.endpoint
+    const port = this.config.port || (this.config.useSSL ? 443 : 80)
     const portSuffix = (port && port !== 80 && port !== 443) ? `:${port}` : ''
     
     return `${protocol}//${host}${portSuffix}/${this.bucket}/${key}`

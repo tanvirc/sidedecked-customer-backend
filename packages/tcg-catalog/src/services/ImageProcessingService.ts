@@ -12,11 +12,11 @@ export class ImageProcessingService {
   constructor(config: ImageProcessingConfig) {
     this.config = config
     this.minioClient = new MinioClient({
-      endPoint: config.minioEndpoint,
-      port: config.minioPort,
-      useSSL: config.minioUseSSL,
-      accessKey: config.minioAccessKey,
-      secretKey: config.minioSecretKey
+      endPoint: config.minioEndpoint || 'localhost',
+      port: config.minioPort || 9000,
+      useSSL: config.minioUseSSL || false,
+      accessKey: config.minioAccessKey || '',
+      secretKey: config.minioSecretKey || ''
     })
   }
 
@@ -371,7 +371,7 @@ export class ImageProcessingService {
           logger.debug('Deleted image from MinIO', { printId, imageType, size, key })
         } catch (error) {
           // Don't fail if individual image doesn't exist
-          logger.warn('Failed to delete image (may not exist)', error as Error, {
+          logger.warn('Failed to delete image (may not exist)', {
             printId,
             imageType,
             size,

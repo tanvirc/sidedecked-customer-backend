@@ -4,7 +4,7 @@ export * from './entities/Card'
 export * from './entities/Print'
 export * from './entities/CardSet'
 export * from './entities/CatalogSKU'
-export * from './entities/CardImage'
+export { CardImage } from './entities/CardImage' // Export only the entity, not the enums
 export * from './entities/ETLJob'
 export * from './entities/Format'
 
@@ -29,7 +29,7 @@ export * from './utils/Constants'
 export * from './utils/Helpers'
 export * from './utils/Logger'
 
-// Types
+// Types (includes ImageStatus and ImageType enums)
 export * from './types/ETLTypes'
 export * from './types/SearchTypes'
 export * from './types/ImageTypes'

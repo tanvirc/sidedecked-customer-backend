@@ -1,4 +1,5 @@
 import { PokemonTCG } from 'pokemon-tcg-sdk-typescript'
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid'
 import { Game } from '../../../../src/entities/Game'
 import { ETLJobType } from '../entities/ETLJob'
 import { UniversalCard, UniversalPrint } from '../types/ETLTypes'
@@ -214,6 +215,9 @@ export class PokemonTransformer {
   }
 
   private transformToUniversal(pokemonCards: PokemonCard[]): UniversalCard[] {
+    // Use a fixed namespace UUID for Pokemon cards to ensure consistent generation
+    const POKEMON_NAMESPACE = '6ba7b815-9dad-11d1-80b4-00c04fd430c8' // Using modified DNS namespace UUID
+    
     // Group cards by name to handle multiple prints/sets
     const cardMap = new Map<string, PokemonCard[]>()
     
@@ -231,8 +235,8 @@ export class PokemonTransformer {
       // Use the first print as canonical card data
       const canonicalCard = prints[0]
       
-      // Generate a pseudo oracle_id for Pokemon (they don't have one)
-      const oracleId = `pokemon_${normalizedName}_${canonicalCard.supertype}`
+      // Generate a deterministic UUID based on card name and supertype
+      const oracleId = uuidv5(`pokemon_${normalizedName}_${canonicalCard.supertype}`, POKEMON_NAMESPACE)
       
       const universalCard: UniversalCard = {
         oracleId,

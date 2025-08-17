@@ -1,4 +1,4 @@
-import { AppDataSource } from '../../../../apps/api/src/config/database'
+import { AppDataSource } from '../../../../src/config/database'
 import { Card } from '../entities/Card'
 import { Print } from '../entities/Print'
 import { CatalogSKU } from '../entities/CatalogSKU'
@@ -125,7 +125,7 @@ export class VendorMatchingService {
         }
         
         // Add alternatives even if not confident enough
-        if (fuzzyMatch.alternativeMatches) {
+        if (fuzzyMatch.alternativeMatches && result.alternativeMatches) {
           result.alternativeMatches.push(...fuzzyMatch.alternativeMatches)
         }
       }
@@ -257,7 +257,7 @@ export class VendorMatchingService {
 
       // Filter by set if available
       if (parsedTitle.setCode || parsedTitle.setName) {
-        queryBuilder.andWhere(qb => {
+        queryBuilder.andWhere((qb: any) => {
           const subQuery = qb.subQuery()
             .select('print.id')
             .from(Print, 'print')
@@ -285,14 +285,14 @@ export class VendorMatchingService {
 
       // Score each card match
       const scoredMatches = await Promise.all(
-        cards.map(async (card) => {
+        cards.map(async (card: any) => {
           const score = await this.scoreCardMatch(card, listing, parsedTitle)
           return { card, score }
         })
       )
 
       // Sort by score
-      scoredMatches.sort((a, b) => b.score.total - a.score.total)
+      scoredMatches.sort((a: any, b: any) => b.score.total - a.score.total)
       const bestMatch = scoredMatches[0]
 
       if (bestMatch.score.total >= this.config.minimumConfidence) {
@@ -309,9 +309,10 @@ export class VendorMatchingService {
       }
 
       // Add alternatives
-      result.alternativeMatches = scoredMatches
-        .slice(0, this.config.maxAlternatives)
-        .map(match => {
+      if (result.alternativeMatches) {
+        result.alternativeMatches = scoredMatches
+          .slice(0, this.config.maxAlternatives)
+          .map((match: any) => {
           const print = this.findBestPrint(match.card, listing, parsedTitle)
           const sku = this.findBestSKU(print, listing)
           
@@ -323,6 +324,7 @@ export class VendorMatchingService {
             reason: this.explainScore(match.score)
           }
         })
+      }
 
       return result
 
@@ -356,20 +358,22 @@ export class VendorMatchingService {
     try {
       // Use search service to find similar cards
       const searchResults = await this.searchService.searchCards({
-        query: listing.title,
-        limit: 10,
+        text: listing.title,
         filters: {
           hasInventory: false // Search all cards, not just available ones
-        }
+        },
+        page: 1,
+        limit: 10
       })
 
-      if (searchResults.cards.length === 0) {
+      if (!searchResults.cards || searchResults.cards.length === 0) {
         result.errors.push('No fuzzy matches found')
         return result
       }
 
-      // Convert search results to alternatives
-      for (const searchResult of searchResults.cards.slice(0, this.config.maxAlternatives)) {
+      // Convert search results to alternatives  
+      const cardResults = searchResults.cards || searchResults.hits
+      for (const searchResult of cardResults.slice(0, this.config.maxAlternatives)) {
         try {
           // Find catalog SKU for this card
           const catalogSku = await AppDataSource.getRepository(CatalogSKU).findOne({

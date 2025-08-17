@@ -96,7 +96,7 @@ export class ImageQueueProcessor {
   private setupQueueEvents(): void {
     this.queue.on('completed', (job, result: ImageProcessingJobResult) => {
       logger.info('Image processing job completed', {
-        jobId: job.id,
+        jobId: String(job.id),
         printId: result.printId,
         totalProcessed: result.totalProcessed,
         totalFailed: result.totalFailed,
@@ -106,7 +106,7 @@ export class ImageQueueProcessor {
 
     this.queue.on('failed', (job, error) => {
       logger.error('Image processing job failed', error, {
-        jobId: job.id,
+        jobId: String(job.id),
         printId: job.data?.printId,
         attempts: job.attemptsMade,
         maxAttempts: job.opts.attempts
@@ -115,7 +115,7 @@ export class ImageQueueProcessor {
 
     this.queue.on('stalled', (job) => {
       logger.warn('Image processing job stalled', {
-        jobId: job.id,
+        jobId: String(job.id),
         printId: job.data?.printId
       })
     })
@@ -123,7 +123,7 @@ export class ImageQueueProcessor {
     this.queue.on('progress', (job, progress) => {
       if (progress % 25 === 0) { // Log every 25% progress
         logger.debug('Image processing job progress', {
-          jobId: job.id,
+          jobId: String(job.id),
           printId: job.data?.printId,
           progress: `${progress}%`
         })
@@ -262,7 +262,15 @@ export class ImageQueueProcessor {
     delayed: number
     paused: number
   }> {
-    return await this.queue.getJobCounts()
+    const counts = await this.queue.getJobCounts()
+    return {
+      waiting: counts.waiting,
+      active: counts.active,
+      completed: counts.completed,
+      failed: counts.failed,
+      delayed: counts.delayed,
+      paused: 0 // Bull v3 doesn't have paused count, set to 0
+    }
   }
 
   /**

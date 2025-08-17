@@ -1,3 +1,19 @@
+export enum ETLJobType {
+  FULL_SYNC = 'full_sync',
+  SET_SYNC = 'set_sync',
+  CARD_SYNC = 'card_sync',
+  PRICE_UPDATE = 'price_update',
+  IMAGE_SYNC = 'image_sync'
+}
+
+export enum ETLJobStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  RETRY = 'retry'
+}
+
 export interface ETLConfig {
   batchSize: number
   rateLimitDelay: number

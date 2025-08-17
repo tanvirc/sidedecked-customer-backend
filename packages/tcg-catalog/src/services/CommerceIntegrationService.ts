@@ -3,7 +3,7 @@ import { logger } from '../utils/Logger'
 import { CatalogSKU } from '../entities/CatalogSKU'
 import { Card } from '../entities/Card'
 import { Print } from '../entities/Print'
-import { AppDataSource } from '../../../../apps/api/src/config/database'
+import { AppDataSource } from '../../../../src/config/database'
 
 export interface CommerceConfig {
   mercurBackendUrl: string
@@ -340,7 +340,7 @@ export class CommerceIntegrationService {
           .limit(5)
           .getMany()
 
-        suggestions.push(...similarSkus.map(s => s.sku))
+        suggestions.push(...similarSkus.map((s: CatalogSKU) => s.sku))
       }
 
       // Validate SKU format
@@ -434,7 +434,7 @@ export class CommerceIntegrationService {
 
       const productData = {
         title: `${card.name} - ${print.set?.name || 'Unknown Set'}`,
-        handle: this.generateProductHandle(card.name, print.setCode, print.collectorNumber),
+        handle: this.generateProductHandle(card.name, print.set?.code || catalogSku.setCode, print.collectorNumber),
         description: this.buildProductDescription(card, print),
         vendor_id: vendorId,
         type_id: await this.getOrCreateProductType(card.primaryType),
@@ -548,7 +548,7 @@ export class CommerceIntegrationService {
     parts.push(`**${card.name}**`)
     
     if (print.set?.name) {
-      parts.push(`From ${print.set.name} (${print.setCode})`)
+      parts.push(`From ${print.set.name} (${print.set.code})`)
     }
     
     if (card.primaryType) {

@@ -29,6 +29,7 @@ export interface SearchFilters {
   
   // Boolean filters
   inStock?: boolean
+  hasInventory?: boolean
   isFoil?: boolean
   isPromo?: boolean
   isAlternateArt?: boolean
@@ -61,6 +62,7 @@ export enum SearchSortField {
 
 export interface SearchResults {
   hits: SearchHit[]
+  cards?: SearchHit[] // Alias for hits for backwards compatibility
   totalHits: number
   facets: Record<string, FacetValue[]>
   processingTime: number

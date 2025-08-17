@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios'
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid'
 import { Game } from '../../../../src/entities/Game'
 import { ETLJobType } from '../entities/ETLJob'
 import { UniversalCard, UniversalPrint } from '../types/ETLTypes'
@@ -237,6 +238,9 @@ export class OnePieceTransformer {
   }
 
   private transformToUniversal(onePieceCards: OnePieceCard[]): UniversalCard[] {
+    // Use a fixed namespace UUID for One Piece cards to ensure consistent generation
+    const ONEPIECE_NAMESPACE = '6ba7b816-9dad-11d1-80b4-00c04fd430c8' // Using modified DNS namespace UUID
+    
     // Group cards by name to handle multiple prints
     const cardMap = new Map<string, OnePieceCard[]>()
     
@@ -252,8 +256,8 @@ export class OnePieceTransformer {
     for (const [normalizedName, prints] of cardMap) {
       const canonicalCard = prints[0]
       
-      // Generate oracle ID for One Piece
-      const oracleId = `onepiece_${normalizedName}_${canonicalCard.type.toLowerCase()}`
+      // Generate a deterministic UUID based on card name and type
+      const oracleId = uuidv5(`onepiece_${normalizedName}_${canonicalCard.type.toLowerCase()}`, ONEPIECE_NAMESPACE)
       
       const universalCard: UniversalCard = {
         oracleId,

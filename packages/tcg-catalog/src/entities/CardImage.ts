@@ -9,23 +9,7 @@ import {
   Index
 } from 'typeorm'
 import { Print } from './Print'
-
-export enum ImageStatus {
-  PENDING = 'pending',
-  PROCESSING = 'processing',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  RETRY = 'retry'
-}
-
-export enum ImageType {
-  MAIN = 'main',
-  BACK = 'back',
-  ART_CROP = 'art_crop',
-  BORDER_CROP = 'border_crop',
-  THUMBNAIL = 'thumbnail',
-  FULL = 'full'
-}
+import { ImageStatus, ImageType } from '../types/ImageTypes'
 
 @Entity('card_images')
 @Index('idx_images_print_type', ['printId', 'imageType'], { unique: true })
