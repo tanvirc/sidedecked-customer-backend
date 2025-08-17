@@ -246,7 +246,7 @@ router.get('/cards/:id', async (req, res) => {
     const cardQuery = `
       SELECT c.*, g.code as game_code, g.name as game_name
       FROM cards c
-      JOIN games g ON c.game_id = g.id
+      LEFT JOIN games g ON c.game_id = g.id
       WHERE c.id = $1 AND c.deleted_at IS NULL
     `
     
@@ -312,7 +312,7 @@ router.get('/cards/:id/details', async (req, res) => {
     const cardQuery = `
       SELECT c.*, g.code as game_code, g.name as game_name
       FROM cards c
-      JOIN games g ON c.game_id = g.id
+      LEFT JOIN games g ON c.game_id = g.id
       WHERE c.id = $1 AND c.deleted_at IS NULL
     `
     
