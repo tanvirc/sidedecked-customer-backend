@@ -130,8 +130,8 @@ router.get('/cards/search', async (req, res) => {
     let sqlQuery = `
       SELECT c.*, g.code as game_code, g.name as game_name
       FROM cards c
-      JOIN games g ON c.game_id = g.id
-      WHERE 1=1
+      LEFT JOIN games g ON c.game_id = g.id
+      WHERE c.deleted_at IS NULL
     `
     const params: any[] = []
     let paramIndex = 1
@@ -163,8 +163,25 @@ router.get('/cards/search', async (req, res) => {
 
     const cards = await AppDataSource.query(sqlQuery, params)
     
-    // Get total count (simplified)
-    const totalResults = await AppDataSource.query('SELECT COUNT(*) as count FROM cards')
+    // Get total count (with same filters)
+    let countQuery = 'SELECT COUNT(*) as count FROM cards c LEFT JOIN games g ON c.game_id = g.id WHERE c.deleted_at IS NULL'
+    let countParams: any[] = []
+    let countParamIndex = 1
+    
+    // Apply same filters for count
+    if (games) {
+      const gameArray = Array.isArray(games) ? games : [games]
+      const placeholders = gameArray.map(() => `$${countParamIndex++}`).join(',')
+      countQuery += ` AND g.code IN (${placeholders})`
+      countParams.push(...gameArray)
+    }
+    
+    if (query) {
+      countQuery += ` AND (c.name ILIKE $${countParamIndex} OR c.oracle_text ILIKE $${countParamIndex} OR c.flavor_text ILIKE $${countParamIndex})`
+      countParams.push(`%${query}%`)
+    }
+    
+    const totalResults = await AppDataSource.query(countQuery, countParams)
     const totalCount = parseInt(totalResults[0].count)
 
     console.log('DEBUG: Found cards:', cards.length, 'Total:', totalCount)
