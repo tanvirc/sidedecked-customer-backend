@@ -14,6 +14,11 @@ interface PokemonCard {
   types?: string[]
   evolvesFrom?: string
   evolvesTo?: string[]
+  abilities?: Array<{
+    name: string
+    text: string
+    type: string
+  }>
   attacks?: Array<{
     name: string
     cost?: string[]
@@ -31,6 +36,7 @@ interface PokemonCard {
   }>
   retreatCost?: string[]
   convertedRetreatCost?: number
+  rules?: string[]
   set: {
     id: string
     name: string
@@ -315,54 +321,72 @@ export class PokemonTransformer {
   }
 
   private buildOracleText(card: PokemonCard): string | undefined {
-    const textParts: string[] = []
+    const sections: string[] = []
 
-    // Add HP
+    // Basic Stats Section
+    const basicStats: string[] = []
     if (card.hp) {
-      textParts.push(`HP: ${card.hp}`)
+      basicStats.push(`HP: ${card.hp}`)
     }
-
-    // Add types
     if (card.types && card.types.length > 0) {
-      textParts.push(`Types: ${card.types.join(', ')}`)
+      basicStats.push(`Types: ${card.types.join(', ')}`)
+    }
+    if (basicStats.length > 0) {
+      sections.push(`[STATS]\n${basicStats.join('\n')}`)
     }
 
-    // Add attacks
+    // Abilities Section (critical rules text)
+    if (card.abilities && card.abilities.length > 0) {
+      const abilityTexts = card.abilities.map(ability => {
+        return `${ability.type}: ${ability.name}\n${ability.text}`
+      })
+      sections.push(`[ABILITIES]\n${abilityTexts.join('\n\n')}`)
+    }
+
+    // Attacks Section
     if (card.attacks && card.attacks.length > 0) {
       const attackTexts = card.attacks.map(attack => {
-        let attackText = attack.name
-        if (attack.cost) {
-          attackText += ` (${attack.cost.join('')})`
+        let attackHeader = attack.name
+        if (attack.cost && attack.cost.length > 0) {
+          attackHeader += ` (${attack.cost.join('')})`
         }
         if (attack.damage) {
-          attackText += ` - ${attack.damage}`
+          attackHeader += ` - ${attack.damage}`
         }
+        
+        let attackDescription = ''
         if (attack.text) {
-          attackText += `: ${attack.text}`
+          attackDescription = `\n${attack.text}`
         }
-        return attackText
+        
+        return `${attackHeader}${attackDescription}`
       })
-      textParts.push(...attackTexts)
+      sections.push(`[ATTACKS]\n${attackTexts.join('\n\n')}`)
     }
 
-    // Add weaknesses
+    // Special Rules Section (e.g., VMAX, GX, special mechanics)
+    if (card.rules && card.rules.length > 0) {
+      sections.push(`[RULES]\n${card.rules.join('\n')}`)
+    }
+
+    // Battle Stats Section
+    const battleStats: string[] = []
     if (card.weaknesses && card.weaknesses.length > 0) {
       const weaknessText = card.weaknesses.map(w => `${w.type}${w.value}`).join(', ')
-      textParts.push(`Weakness: ${weaknessText}`)
+      battleStats.push(`Weakness: ${weaknessText}`)
     }
-
-    // Add resistances
     if (card.resistances && card.resistances.length > 0) {
       const resistanceText = card.resistances.map(r => `${r.type}${r.value}`).join(', ')
-      textParts.push(`Resistance: ${resistanceText}`)
+      battleStats.push(`Resistance: ${resistanceText}`)
     }
-
-    // Add retreat cost
     if (card.retreatCost && card.retreatCost.length > 0) {
-      textParts.push(`Retreat: ${card.retreatCost.join('')}`)
+      battleStats.push(`Retreat: ${card.retreatCost.join('')}`)
+    }
+    if (battleStats.length > 0) {
+      sections.push(`[BATTLE]\n${battleStats.join('\n')}`)
     }
 
-    return textParts.length > 0 ? textParts.join('\n') : undefined
+    return sections.length > 0 ? sections.join('\n\n') : undefined
   }
 
   private extractKeywords(card: PokemonCard): string[] {

@@ -65,12 +65,80 @@ async function importPokemonCardsSimple(limit: number = 5): Promise<void> {
           continue
         }
 
-        // Insert card
+        // Build structured oracle text with abilities and rules (our fix!)
+        const sections: string[] = []
+
+        // Basic Stats Section
+        const basicStats: string[] = []
+        if (card.hp) {
+          basicStats.push(`HP: ${card.hp}`)
+        }
+        if (card.types && card.types.length > 0) {
+          basicStats.push(`Types: ${card.types.join(', ')}`)
+        }
+        if (basicStats.length > 0) {
+          sections.push(`[STATS]\n${basicStats.join('\n')}`)
+        }
+
+        // Add abilities (this was missing before our fix!)
+        if (card.abilities && card.abilities.length > 0) {
+          const abilityTexts = card.abilities.map(ability => {
+            return `${ability.type}: ${ability.name}\n${ability.text}`
+          })
+          sections.push(`[ABILITIES]\n${abilityTexts.join('\n\n')}`)
+        }
+        
+        // Add attacks
+        if (card.attacks && card.attacks.length > 0) {
+          const attackTexts = card.attacks.map(attack => {
+            let attackHeader = attack.name
+            if (attack.cost && attack.cost.length > 0) {
+              attackHeader += ` (${attack.cost.join('')})`
+            }
+            if (attack.damage) {
+              attackHeader += ` - ${attack.damage}`
+            }
+            
+            let attackDescription = ''
+            if (attack.text) {
+              attackDescription = `\n${attack.text}`
+            }
+            
+            return `${attackHeader}${attackDescription}`
+          })
+          sections.push(`[ATTACKS]\n${attackTexts.join('\n\n')}`)
+        }
+        
+        // Add card rules (this was also missing before our fix!)
+        if (card.rules && card.rules.length > 0) {
+          sections.push(`[RULES]\n${card.rules.join('\n')}`)
+        }
+        
+        // Battle Stats Section
+        const battleStats: string[] = []
+        if (card.weaknesses && card.weaknesses.length > 0) {
+          const weaknessText = card.weaknesses.map(w => `${w.type}${w.value}`).join(', ')
+          battleStats.push(`Weakness: ${weaknessText}`)
+        }
+        if (card.resistances && card.resistances.length > 0) {
+          const resistanceText = card.resistances.map(r => `${r.type}${r.value}`).join(', ')
+          battleStats.push(`Resistance: ${resistanceText}`)
+        }
+        if (card.retreatCost && card.retreatCost.length > 0) {
+          battleStats.push(`Retreat: ${card.retreatCost.join('')}`)
+        }
+        if (battleStats.length > 0) {
+          sections.push(`[BATTLE]\n${battleStats.join('\n')}`)
+        }
+        
+        const oracleText = sections.length > 0 ? sections.join('\n\n') : null
+
+        // Insert card with oracle text
         const cardResult = await AppDataSource.query(`
           INSERT INTO cards (
             game_id, oracle_id, name, normalized_name, primary_type,
-            hp, retreat_cost, energy_types
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+            hp, retreat_cost, energy_types, oracle_text
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
           RETURNING id
         `, [
           gameId,
@@ -80,7 +148,8 @@ async function importPokemonCardsSimple(limit: number = 5): Promise<void> {
           card.supertype || card.subtypes?.[0] || 'Unknown',
           card.hp ? parseInt(card.hp) : null,
           card.retreatCost ? card.retreatCost.length : null,
-          card.types || []
+          card.types || [],
+          oracleText
         ])
 
         const cardId = cardResult[0].id
@@ -144,7 +213,8 @@ async function importPokemonCardsSimple(limit: number = 5): Promise<void> {
         }
 
         importedCount++
-        console.log(`✅ Imported: ${card.name} (Base #${card.number}) - ${card.rarity}`)
+        const hasRulesText = oracleText && (oracleText.includes('Ability:') || oracleText.includes('rule:'))
+        console.log(`✅ Imported: ${card.name} (Base #${card.number}) - ${card.rarity}${hasRulesText ? ' 🎯 HAS RULES' : ''}`)
         
       } catch (error) {
         console.error(`❌ Failed to import ${card.name}:`, error)
@@ -166,7 +236,7 @@ async function main(): Promise<void> {
     await AppDataSource.initialize()
     console.log('🔌 Database connected')
 
-    await importPokemonCardsSimple(5)
+    await importPokemonCardsSimple(10)
 
     console.log('\n📊 Import Summary')
     console.log('================')
