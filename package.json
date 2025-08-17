@@ -2,7 +2,7 @@
   "name": "sidedecked-customer-backend",
   "version": "1.0.0",
   "description": "SideDecked Customer Backend API Server - TCG Catalog, Deck Builder, Community, Pricing Intelligence",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "private": true,
   "workspaces": [
     "packages/*"
@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "start": "node dist/index.js",
+    "start": "node dist/src/index.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit",
