@@ -113,7 +113,7 @@ async function startServer(): Promise<void> {
         WHERE table_schema = 'public' AND table_name IN ('market_prices', 'price_history')
         ORDER BY table_name
       `)
-      console.log('🔍 Pricing tables check:', tableCheck.map(t => t.table_name))
+      console.log('🔍 Pricing tables check:', tableCheck.map((t: any) => t.table_name))
       
       if (tableCheck.length === 0) {
         console.log('❌ No pricing tables found - this explains the errors')
@@ -125,7 +125,7 @@ async function startServer(): Promise<void> {
         console.log(`📊 price_history: ${priceHistoryCount[0].count} rows`)
       }
     } catch (error) {
-      console.log('❌ Debug table check failed:', error.message)
+      console.log('❌ Debug table check failed:', (error as Error).message)
     }
 
     // Initialize infrastructure (Redis, Algolia, etc.)
