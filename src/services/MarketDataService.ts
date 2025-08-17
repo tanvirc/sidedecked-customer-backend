@@ -286,17 +286,23 @@ export class MarketDataService {
         .where('last_scraped < :threshold', { threshold: staleThreshold })
         .execute()
 
-      // Remove duplicate records (same source, seller, and SKU)
-      const duplicatesQuery = `
-        DELETE FROM market_prices a USING market_prices b 
-        WHERE a.id > b.id 
-        AND a.catalog_sku = b.catalog_sku 
-        AND a.source = b.source 
-        AND a.seller_id = b.seller_id 
-        AND a.condition = b.condition 
-        AND a.language = b.language
-      `
-      const duplicateResult = await AppDataSource.query(duplicatesQuery)
+      // Remove duplicate records (same source, seller, and SKU) using TypeORM QueryBuilder
+      const duplicateResult = await this.marketPriceRepo
+        .createQueryBuilder()
+        .delete()
+        .where(`id IN (
+          SELECT mp1.id 
+          FROM market_prices mp1
+          INNER JOIN market_prices mp2 ON (
+            mp1.catalog_sku = mp2.catalog_sku 
+            AND mp1.source = mp2.source 
+            AND mp1.seller_id = mp2.seller_id 
+            AND mp1.condition = mp2.condition 
+            AND mp1.language = mp2.language
+            AND mp1.id > mp2.id
+          )
+        )`)
+        .execute()
 
       // Fix invalid prices (negative, zero, or unreasonably high)
       const invalidPricesResult = await this.marketPriceRepo
