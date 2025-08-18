@@ -174,6 +174,19 @@ export class CDNService {
     // until CDN configuration is updated to handle the new path structure
     if (originalUrl.includes('/variants/')) {
       logger.debug('Using MinIO fallback for consolidated variants path', { originalUrl })
+      
+      // If originalUrl is already a CDN URL with /variants/, convert to MinIO
+      if (originalUrl.includes(this.baseUrl)) {
+        const convertedUrl = this.convertCdnToMinioUrl(originalUrl)
+        if (convertedUrl) {
+          logger.debug('Converted CDN variants URL to MinIO', { 
+            cdnUrl: originalUrl, 
+            minioUrl: convertedUrl 
+          })
+          return convertedUrl
+        }
+      }
+      
       return minioUrl || originalUrl
     }
 
