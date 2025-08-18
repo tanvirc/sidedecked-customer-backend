@@ -50,6 +50,52 @@ npm run dev
 # API will be available at http://localhost:7000
 ```
 
+## Image Processing Setup
+
+The customer-backend includes a complete image processing pipeline for TCG card images:
+
+### Prerequisites
+```bash
+# Ensure MinIO and Redis are configured in .env
+MINIO_ENDPOINT=your-minio-endpoint
+MINIO_ACCESS_KEY=your-access-key
+MINIO_SECRET_KEY=your-secret-key
+MINIO_BUCKET=sidedecked-card-images
+REDIS_URL=redis://localhost:6379
+```
+
+### Quick Image Processing Start
+```bash
+# 1. Start the image processing worker (in separate terminal)
+npm run worker:images
+
+# 2. Import cards and process images
+npm run etl -- --game=MTG --limit=100
+
+# 3. Check processing status
+npm run sync:images:status
+
+# 4. Sync any unprocessed images
+npm run sync:images
+```
+
+### Image Processing Commands
+```bash
+# Worker management
+npm run worker:images                 # Start image processing worker
+
+# Image synchronization
+npm run sync:images                   # Sync all unprocessed images
+npm run sync:images:status           # Check current processing status
+npm run sync:images:dry-run          # Preview what would be synced
+npm run sync:images:mtg              # Sync specific game only
+npm run sync:images:pokemon          # Sync Pokemon cards only
+npm run sync:images:yugioh           # Sync Yu-Gi-Oh cards only
+
+# Testing and validation
+npm run test:images                  # Test complete image pipeline
+```
+
 ## Development
 
 ```bash
@@ -79,6 +125,7 @@ The customer-backend uses the `sidedecked-db` database with the following main e
 - `prints` - Game-specific card printings and variants
 - `sets` - Card set information
 - `catalog_skus` - Universal SKU system for marketplace integration
+- `card_images` - Processed image metadata and status tracking
 
 ### Deck Builder
 - `decks` - User-created decks
@@ -214,3 +261,59 @@ See `.env.template` for all required environment variables. Key configurations:
 - **ALGOLIA_APP_ID** - Search engine configuration
 
 **Note**: Without `COMMERCE_PUBLISHABLE_KEY`, the inventory sync service will operate in fallback mode with limited functionality.
+
+## Troubleshooting
+
+### Image Processing Issues
+
+#### Worker Not Processing Images
+```bash
+# Check if worker is running
+ps aux | grep worker:images
+
+# Check Redis connection
+redis-cli ping
+
+# Check MinIO connection
+curl -s http://your-minio-endpoint/minio/health/live
+```
+
+#### Sharp Resize Errors
+If you encounter "Expected positive integer for width but received 0" errors:
+- This has been fixed in the latest version
+- Restart the image worker: `npm run worker:images`
+- Reset failed images: `UPDATE card_images SET status = 'pending' WHERE status = 'failed';`
+
+#### No Images in MinIO
+```bash
+# Check image processing status
+npm run sync:images:status
+
+# Force reprocess all images
+npm run sync:images -- --force-reprocess
+
+# Check specific game
+npm run sync:images:mtg
+```
+
+#### API Returning External URLs Instead of Processed Images
+- Ensure images have been processed successfully: `npm run sync:images:status`
+- Check catalog API is using processed images: API prioritizes MinIO URLs over external URLs
+- Verify CDN configuration in environment variables
+
+### ETL Issues
+
+#### Games Not Found
+Ensure the game exists in the database:
+```sql
+SELECT * FROM games WHERE code = 'MTG';
+```
+
+#### Database Connection Issues
+```bash
+# Check database connectivity
+npm run migration:show
+
+# Verify environment variables
+echo $DATABASE_URL
+```

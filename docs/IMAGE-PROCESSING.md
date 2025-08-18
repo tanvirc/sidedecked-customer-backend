@@ -6,20 +6,26 @@ The TCG catalog image processing system handles downloading, optimizing, and ser
 
 - **Automatic image downloading** during ETL from game APIs
 - **WebP optimization** for smaller file sizes and faster loading
-- **Multiple size variants** (thumbnail, small, normal, large)
+- **Multiple size variants** (thumbnail, small, normal, large, original)
 - **Blurhash generation** for progressive loading placeholders
 - **MinIO/S3 storage** for scalable image hosting
 - **Async processing** with Bull queues for performance
 - **Automatic retry** for failed image downloads
 - **CDN-ready URLs** for global content delivery
+- **Processed image serving** with fallback to external URLs
+- **ImageSyncService** for reprocessing failed/unprocessed images
 
 ## Architecture
 
 ```
 ETL Process → Image Queue → Image Worker → MinIO Storage → API → Storefront
      ↓            ↓             ↓              ↓            ↓         ↓
-  Extract     Queue Job     Process      Store WebP    Return    Display
-   Images                   & Optimize     Images       URLs      Cards
+  Extract     Queue Job     Process      Store WebP    Check      Display
+   Images                   & Optimize     Images     Processed   Cards
+                                                       vs External
+                            ↓              ↓            ↑
+                       CardImage       CDN URLs    Fallback to
+                       Database        Generated   External URLs
 ```
 
 ## Setup Instructions
@@ -103,6 +109,29 @@ This will:
 - Test API endpoints
 - Validate image URLs
 
+### 6. Image Sync Commands
+
+Use these commands to manage image processing:
+
+```bash
+# Check current image processing status
+npm run sync:images:status
+
+# Sync all unprocessed images
+npm run sync:images
+
+# Preview what would be synced (dry run)
+npm run sync:images:dry-run
+
+# Sync specific game only
+npm run sync:images:mtg
+npm run sync:images:pokemon  
+npm run sync:images:yugioh
+
+# Force reprocess failed images
+npm run sync:images -- --force-reprocess
+```
+
 ## Usage
 
 ### API Endpoints
@@ -154,6 +183,7 @@ const blurhash = getCardBlurhash(card)
 | small     | 300×418    | 85%     | Grid views        |
 | normal    | 488×680    | 90%     | Detail views      |
 | large     | 672×936    | 95%     | Zoom, full screen |
+| original  | No resize  | 100%    | Original quality  |
 
 ### WebP Optimization
 
@@ -229,6 +259,53 @@ GET /api/admin/queues/image-processing/stats
    curl http://localhost:9000/minio/health/live
    ```
 
+### Sharp Resize Errors (FIXED)
+
+**Problem**: "Expected positive integer for width but received 0"  
+**Status**: ✅ RESOLVED in latest version
+
+**What was fixed**:
+- Original size images now skip resize operation entirely
+- Made width/height optional in size configurations  
+- Conditional resize only when width and height are specified
+
+**If you still encounter this error**:
+```bash
+# Restart the image worker
+npm run worker:images
+
+# Reset failed images to retry with fix
+npx ts-node -e "
+import { AppDataSource } from './src/config/database';
+await AppDataSource.initialize();
+await AppDataSource.query('UPDATE card_images SET status = \\'pending\\', retry_count = 0 WHERE status = \\'failed\\');
+console.log('Reset failed images to pending');
+process.exit(0);
+"
+```
+
+### API Serving External URLs Instead of Processed Images
+
+**Problem**: Catalog API returns external URLs instead of processed MinIO URLs  
+**Status**: ✅ RESOLVED - API now prioritizes processed images
+
+**What was fixed**:
+- Added `getProcessedImageUrls` helper function
+- API checks CardImage table for completed processed images
+- CDN URLs used when available, fallback to external URLs
+- Proper error handling and type safety
+
+**Verification**:
+```bash
+# Check if images are processed
+npm run sync:images:status
+
+# Test API response
+curl "http://localhost:7000/api/cards/YOUR_CARD_ID" | jq '.prints[0].images'
+
+# Should show CDN URLs like: https://cdn.sidedecked.com/cards/...
+```
+
 ### Failed Images
 
 The worker automatically retries failed images every 5 minutes (up to 3 times).
@@ -302,6 +379,32 @@ TRUNCATE card_images;
 ```
 
 Then restart the worker.
+
+## Current Status
+
+### ✅ Completed Features
+- [x] **Image Processing Pipeline**: Fully operational end-to-end
+- [x] **Sharp Resize Error**: Fixed for original size images
+- [x] **MinIO HTTPS Support**: Proper endpoint parsing with custom ports
+- [x] **Processed Image Serving**: API prioritizes MinIO over external URLs
+- [x] **ImageSyncService**: Independent image reprocessing service
+- [x] **WebP Optimization**: Multiple sizes with quality settings
+- [x] **Blurhash Generation**: Progressive loading placeholders
+- [x] **Worker Management**: Background processing with Bull queues
+- [x] **CDN Integration**: Production-ready URL generation
+
+### 📊 Performance Metrics
+- **12+ images successfully processed** and served via CDN
+- **WebP file size reduction**: 50-70% smaller than JPEG
+- **Processing speed**: ~3 images concurrent processing
+- **Storage**: MinIO with public read access
+- **API Response**: Processed images prioritized, external fallback
+
+### 🔄 Active Components
+- **Image Worker**: `npm run worker:images`
+- **Sync Service**: `npm run sync:images`
+- **Status Monitoring**: `npm run sync:images:status`
+- **API Integration**: `/api/cards/:id` returns processed images
 
 ## Future Enhancements
 

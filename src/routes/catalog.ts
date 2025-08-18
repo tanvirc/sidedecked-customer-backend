@@ -8,10 +8,44 @@ import { Format } from '../entities/Format'
 import { CatalogSKU } from '../entities/CatalogSKU'
 import { CardImage, ImageStatus } from '../entities/CardImage'
 import { getStorageService } from '../config/infrastructure'
+import { config } from '../config/env'
+import { cdnService } from '../services/CDNService'
 
 const router = Router()
 
-// Helper function to get processed image URLs, fallback to external URLs
+// CDN Health Check endpoint
+router.get('/cdn/health', async (req, res) => {
+  try {
+    const cdnConfig = cdnService.getConfig()
+    const isHealthy = cdnService.isEnabled()
+    
+    res.json({
+      success: true,
+      cdn: {
+        enabled: cdnConfig.enabled,
+        healthy: isHealthy,
+        baseUrl: cdnConfig.baseUrl,
+        cacheTTL: cdnConfig.defaultTTL,
+        browserCacheTTL: cdnConfig.browserCacheTTL,
+        edgeCacheTTL: cdnConfig.edgeCacheTTL,
+        failoverEnabled: cdnConfig.failoverEnabled
+      },
+      timestamp: new Date().toISOString()
+    })
+  } catch (error) {
+    console.error('CDN health check failed:', error)
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'CDN_HEALTH_CHECK_FAILED',
+        message: 'CDN health check failed',
+        timestamp: new Date().toISOString()
+      }
+    })
+  }
+})
+
+// Helper function to get processed image URLs with CDN support and fallbacks
 async function getProcessedImageUrls(print: Print): Promise<{
   thumbnail?: string
   small?: string
@@ -32,30 +66,34 @@ async function getProcessedImageUrls(print: Print): Promise<{
 
     console.log(`DEBUG: Found ${processedImages.length} processed images for print ${print.id}`)
 
-    // Build image URLs object with processed images first, then fallbacks
+    // Build image URLs using CDN service with intelligent fallbacks
     const storage = getStorageService()
     const images: any = {}
 
-    // If we have processed images, use CDN URLs first, then storage URLs
+    // If we have processed images, use CDN service for URL generation
     if (processedImages.length > 0) {
       for (const cardImage of processedImages) {
         console.log(`DEBUG: Processing CardImage ${cardImage.id}, type: ${cardImage.imageType}`)
         
-        // Prefer CDN URLs if available
+        // Priority 1: Use CDN URLs if available
         if (cardImage.cdnUrls) {
           const cdnUrls = cardImage.cdnUrls as Record<string, string>
           console.log('DEBUG: Found CDN URLs:', Object.keys(cdnUrls))
           
-          // Map CDN URLs to our standard image sizes
-          if (cdnUrls.thumbnail && !images.thumbnail) images.thumbnail = cdnUrls.thumbnail
-          if (cdnUrls.small && !images.small) images.small = cdnUrls.small
-          if (cdnUrls.normal && !images.normal) images.normal = cdnUrls.normal
-          if (cdnUrls.large && !images.large) images.large = cdnUrls.large
-          if (cdnUrls.artCrop && !images.artCrop) images.artCrop = cdnUrls.artCrop
-          if (cdnUrls.borderCrop && !images.borderCrop) images.borderCrop = cdnUrls.borderCrop
+          // Use CDN service to generate optimized URLs
+          const cdnVariants = cdnService.generateImageVariants('', cdnUrls)
           
-        } else if (cardImage.storageUrls) {
-          // Fallback to direct MinIO URLs
+          // Map CDN URLs to our standard image sizes with fallback logic
+          if (cdnVariants.thumbnail && !images.thumbnail) images.thumbnail = cdnVariants.thumbnail
+          if (cdnVariants.small && !images.small) images.small = cdnVariants.small
+          if (cdnVariants.normal && !images.normal) images.normal = cdnVariants.normal
+          if (cdnVariants.large && !images.large) images.large = cdnVariants.large
+          if (cdnVariants.artCrop && !images.artCrop) images.artCrop = cdnVariants.artCrop
+          if (cdnVariants.borderCrop && !images.borderCrop) images.borderCrop = cdnVariants.borderCrop
+        } 
+        
+        // Priority 2: Storage URLs with CDN proxy if enabled
+        if (cardImage.storageUrls) {
           const storageUrls = cardImage.storageUrls as Record<string, string>
           console.log('DEBUG: Found storage URLs:', Object.keys(storageUrls))
           
@@ -64,20 +102,14 @@ async function getProcessedImageUrls(print: Print): Promise<{
             
             try {
               // Extract the MinIO key more reliably
-              // Expected format: https://domain/bucket/path/to/file.webp
-              // or: /bucket/path/to/file.webp
               let key: string
               
               if (url.startsWith('http')) {
-                // Parse URL to extract path after bucket
                 const urlObj = new URL(url)
                 const pathParts = urlObj.pathname.split('/').filter(Boolean)
-                // Skip bucket name (first part) to get the object key
                 key = pathParts.slice(1).join('/')
               } else {
-                // Handle relative paths
                 key = url.startsWith('/') ? url.substring(1) : url
-                // Remove bucket name if present
                 const pathParts = key.split('/').filter(Boolean)
                 if (pathParts[0] === 'sidedecked-images') {
                   key = pathParts.slice(1).join('/')
@@ -86,7 +118,10 @@ async function getProcessedImageUrls(print: Print): Promise<{
               
               console.log(`DEBUG: Extracted key "${key}" from URL "${url}"`)
               
-              const publicUrl = storage.getPublicUrl(key)
+              // Use CDN service for URL generation with fallback
+              const minioUrl = storage.getPublicUrl(key)
+              const publicUrl = cdnService.getFallbackUrl(key, minioUrl)
+              
               console.log(`DEBUG: Generated public URL: ${publicUrl}`)
               
               // Map to image sizes, avoid overwriting existing URLs
@@ -111,7 +146,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
     if (!images.normal) images.normal = images.large || images.small
     if (!images.large) images.large = images.normal
 
-    // Final fallback to external URLs if no processed images found
+    // Priority 3: Final fallback to external URLs if no processed images found
     if (!images.normal && !images.small && !images.large) {
       console.log('DEBUG: No processed images found, falling back to external URLs')
       return {
@@ -124,7 +159,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
       }
     }
 
-    console.log('DEBUG: Final image URLs:', images)
+    console.log('DEBUG: Final image URLs with CDN support:', images)
     return images
     
   } catch (error) {
