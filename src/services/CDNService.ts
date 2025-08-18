@@ -101,6 +101,11 @@ export class CDNService {
   generateImageVariants(baseImagePath: string, variants: Record<string, string>): ImageVariant {
     const result: ImageVariant = {}
     
+    // If CDN is disabled, return empty variants to force fallback
+    if (!this.isEnabled()) {
+      return result
+    }
+    
     for (const [variant, path] of Object.entries(variants)) {
       if (path) {
         result[variant as keyof ImageVariant] = this.generateImageUrl(path)
@@ -114,7 +119,7 @@ export class CDNService {
    * Check if CDN is enabled and properly configured
    */
   isEnabled(): boolean {
-    return this.enabled && !!this.baseUrl
+    return this.enabled
   }
 
   /**
@@ -165,11 +170,16 @@ export class CDNService {
    * Get fallback URL strategy
    */
   getFallbackUrl(originalUrl: string, minioUrl: string): string {
+    // If CDN is disabled, always return MinIO URL directly without any CDN processing
+    if (!this.isEnabled()) {
+      return minioUrl || originalUrl
+    }
+
     if (!this.failoverEnabled) {
       return originalUrl
     }
 
-    // Priority: CDN -> MinIO -> External URL
+    // Priority: CDN -> MinIO -> External URL (only when CDN is enabled)
     if (this.isEnabled() && !originalUrl.includes(this.baseUrl)) {
       return this.generateImageUrl(originalUrl)
     }

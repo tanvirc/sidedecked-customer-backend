@@ -70,13 +70,14 @@ async function getProcessedImageUrls(print: Print): Promise<{
     const storage = getStorageService()
     const images: any = {}
 
+
     // If we have processed images, use CDN service for URL generation
     if (processedImages.length > 0) {
       for (const cardImage of processedImages) {
         console.log(`DEBUG: Processing CardImage ${cardImage.id}, type: ${cardImage.imageType}`)
         
-        // Priority 1: Use CDN URLs if available
-        if (cardImage.cdnUrls) {
+        // Priority 1: Use CDN URLs if available and CDN is enabled
+        if (cardImage.cdnUrls && cdnService.isEnabled()) {
           const cdnUrls = cardImage.cdnUrls as Record<string, string>
           console.log('DEBUG: Found CDN URLs:', Object.keys(cdnUrls))
           

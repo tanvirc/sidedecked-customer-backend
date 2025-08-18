@@ -38,9 +38,9 @@ export const config = {
   MINIO_BUCKET: process.env.MINIO_BUCKET || 'sidedecked-card-images',
   MINIO_REGION: process.env.MINIO_REGION || 'us-east-1',
   
-  // CDN & Content Delivery
+  // CDN & Content Delivery  
   CDN_BASE_URL: process.env.CDN_BASE_URL,
-  CDN_ENABLED: process.env.CDN_ENABLED === 'true' || false,
+  CDN_ENABLED: process.env.CDN_ENABLED === 'true',
   CDN_CACHE_TTL: parseInt(process.env.CDN_CACHE_TTL || '31536000'), // 1 year
   CDN_BROWSER_CACHE_TTL: parseInt(process.env.CDN_BROWSER_CACHE_TTL || '86400'), // 24 hours
   CDN_EDGE_CACHE_TTL: parseInt(process.env.CDN_EDGE_CACHE_TTL || '2592000'), // 30 days
