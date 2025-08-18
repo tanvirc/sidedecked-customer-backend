@@ -170,23 +170,43 @@ export class CDNService {
    * Get fallback URL strategy
    */
   getFallbackUrl(originalUrl: string, minioUrl: string): string {
-    // If CDN is disabled, convert CDN URLs back to MinIO URLs
+    // When CDN is disabled, always use MinIO URLs for optimal performance
     if (!this.isEnabled()) {
-      // If the originalUrl is a CDN URL, convert it back to MinIO URL
+      // Convert CDN URLs to MinIO URLs
       if (originalUrl.includes(this.baseUrl)) {
         const convertedUrl = this.convertCdnToMinioUrl(originalUrl)
         if (convertedUrl) {
+          logger.debug('CDN disabled: converted CDN URL to MinIO URL', { 
+            original: originalUrl, 
+            converted: convertedUrl 
+          })
           return convertedUrl
         }
       }
-      return minioUrl || originalUrl
+      
+      // If already a MinIO URL, use it directly
+      if (originalUrl.includes('bucket-production') || originalUrl.includes('sidedecked-card-images')) {
+        logger.debug('CDN disabled: using MinIO URL directly', { url: originalUrl })
+        return originalUrl
+      }
+      
+      // Use provided MinIO URL as fallback
+      if (minioUrl && (minioUrl.includes('bucket-production') || minioUrl.includes('sidedecked-card-images'))) {
+        logger.debug('CDN disabled: using fallback MinIO URL', { url: minioUrl })
+        return minioUrl
+      }
+      
+      // Last resort: return original URL
+      logger.warn('CDN disabled but no MinIO URL available', { originalUrl, minioUrl })
+      return originalUrl
     }
 
+    // CDN is enabled - use standard CDN logic
     if (!this.failoverEnabled) {
       return originalUrl
     }
 
-    // Priority: CDN -> MinIO -> External URL (only when CDN is enabled)
+    // Priority: CDN -> MinIO -> External URL (when CDN is enabled)
     if (this.isEnabled() && !originalUrl.includes(this.baseUrl)) {
       return this.generateImageUrl(originalUrl)
     }
