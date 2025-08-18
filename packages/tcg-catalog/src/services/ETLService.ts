@@ -23,6 +23,7 @@ import {
   OnePieceTransformer 
 } from '../transformers'
 import { getImageQueue } from '../../../../src/config/infrastructure'
+import { ImageSyncService } from './ImageSyncService'
 
 export class ETLService {
   private circuitBreakers: Map<string, CircuitBreakerState> = new Map()
@@ -112,6 +113,11 @@ export class ETLService {
     let setsCreated = 0
 
     try {
+      // Handle IMAGE_SYNC job type separately
+      if (jobType === ETLJobType.IMAGE_SYNC) {
+        return await this.processImageSyncJob(jobId, game, result, startTime)
+      }
+
       // Get data from external API
       const dataTransformer = this.getDataTransformer(game.apiProvider!)
       const cards = await dataTransformer.fetchCards(game, jobType, limit)
@@ -200,6 +206,87 @@ export class ETLService {
         retryable: false
       })
       
+      throw error
+    }
+  }
+
+  /**
+   * Process IMAGE_SYNC job to find and queue unprocessed images
+   */
+  private async processImageSyncJob(
+    jobId: string,
+    game: Game,
+    result: ETLResult,
+    startTime: number
+  ): Promise<ETLResult> {
+    try {
+      logger.info(`🖼️ Starting image sync for ${game.code}`, { jobId })
+
+      // Create ImageSyncService for this specific game
+      const imageSyncService = new ImageSyncService({
+        gameCode: game.code,
+        batchSize: this.config.batchSize,
+        dryRun: false,
+        forceReprocess: this.config.forceUpdate,
+        maxRetries: this.config.maxRetries
+      })
+
+      // Run image synchronization
+      const syncResult = await imageSyncService.syncImages()
+
+      // Map ImageSyncResult to ETLResult
+      result.totalProcessed = syncResult.totalPrintsScanned
+      result.imagesQueued = syncResult.imagesQueued
+      result.duration = Date.now() - startTime
+      result.success = syncResult.success
+
+      // Add any errors from sync
+      if (syncResult.errors.length > 0) {
+        result.errors = syncResult.errors.map(error => ({
+          type: 'image_error',
+          message: error,
+          timestamp: new Date(),
+          retryable: true
+        }))
+      }
+
+      // Update job progress (image sync is considered complete once queued)
+      await this.updateETLJobProgress(jobId, result.totalProcessed, result.totalProcessed)
+
+      // Log comprehensive summary for image sync
+      logger.etlSummary(game.code, {
+        expected: result.totalProcessed,
+        imported: 0, // No cards imported during image sync
+        updated: 0,
+        skipped: result.totalProcessed - syncResult.printsNeedingImages,
+        failed: result.errors.length,
+        printsCreated: 0,
+        setsCreated: 0,
+        skusGenerated: 0,
+        duration: result.duration
+      }, jobId)
+
+      logger.info(`✅ Image sync completed for ${game.code}`, {
+        jobId,
+        printsScanned: syncResult.totalPrintsScanned,
+        printsNeedingImages: syncResult.printsNeedingImages,
+        imagesQueued: syncResult.imagesQueued,
+        duration: result.duration
+      })
+
+      return result
+
+    } catch (error) {
+      result.success = false
+      result.duration = Date.now() - startTime
+      result.errors.push({
+        type: 'image_error',
+        message: (error as Error).message,
+        timestamp: new Date(),
+        retryable: false
+      })
+
+      logger.error(`❌ Image sync failed for ${game.code}`, error as Error, { jobId })
       throw error
     }
   }
@@ -823,6 +910,72 @@ export class ETLService {
    */
   async syncOnePieceCards(): Promise<ETLResult> {
     return this.startETLJob('ONEPIECE', ETLJobType.FULL_SYNC, 'automated')
+  }
+
+  /**
+   * Sync images for all games
+   */
+  async syncAllImages(): Promise<ETLResult[]> {
+    const results: ETLResult[] = []
+    const games = ['MTG', 'POKEMON', 'YUGIOH', 'ONEPIECE']
+    
+    for (const gameCode of games) {
+      try {
+        const result = await this.startETLJob(gameCode, ETLJobType.IMAGE_SYNC, 'automated')
+        results.push(result)
+      } catch (error) {
+        logger.error(`Failed to sync images for ${gameCode}`, error as Error)
+        results.push({
+          success: false,
+          gameCode,
+          totalProcessed: 0,
+          cardsCreated: 0,
+          cardsUpdated: 0,
+          cardsDeleted: 0,
+          printsCreated: 0,
+          printsUpdated: 0,
+          imagesQueued: 0,
+          skusGenerated: 0,
+          duration: 0,
+          errors: [{
+            type: 'image_error',
+            message: (error as Error).message,
+            timestamp: new Date(),
+            retryable: true
+          }]
+        })
+      }
+    }
+    
+    return results
+  }
+
+  /**
+   * Sync images for MTG cards
+   */
+  async syncMTGImages(): Promise<ETLResult> {
+    return this.startETLJob('MTG', ETLJobType.IMAGE_SYNC, 'automated')
+  }
+
+  /**
+   * Sync images for Pokemon cards
+   */
+  async syncPokemonImages(): Promise<ETLResult> {
+    return this.startETLJob('POKEMON', ETLJobType.IMAGE_SYNC, 'automated')
+  }
+
+  /**
+   * Sync images for Yu-Gi-Oh cards
+   */
+  async syncYuGiOhImages(): Promise<ETLResult> {
+    return this.startETLJob('YUGIOH', ETLJobType.IMAGE_SYNC, 'automated')
+  }
+
+  /**
+   * Sync images for One Piece cards
+   */
+  async syncOnePieceImages(): Promise<ETLResult> {
+    return this.startETLJob('ONEPIECE', ETLJobType.IMAGE_SYNC, 'automated')
   }
 }
 

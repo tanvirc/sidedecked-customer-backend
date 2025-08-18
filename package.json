@@ -24,7 +24,14 @@
     "seed": "ts-node src/scripts/seed.ts",
     "etl": "ts-node src/scripts/master-etl.ts",
     "worker:images": "ts-node src/workers/image-worker.ts",
-    "test:images": "ts-node src/scripts/test-image-pipeline.ts"
+    "test:images": "ts-node src/scripts/test-image-pipeline.ts",
+    "sync:images": "ts-node src/scripts/sync-images.ts",
+    "sync:images:status": "ts-node src/scripts/sync-images.ts --status",
+    "sync:images:dry-run": "ts-node src/scripts/sync-images.ts --dry-run",
+    "sync:images:mtg": "ts-node src/scripts/sync-images.ts --game MTG",
+    "sync:images:pokemon": "ts-node src/scripts/sync-images.ts --game POKEMON",
+    "sync:images:yugioh": "ts-node src/scripts/sync-images.ts --game YUGIOH",
+    "sync:images:onepiece": "ts-node src/scripts/sync-images.ts --game ONEPIECE"
   },
   "dependencies": {
     "algoliasearch": "^4.20.0",
