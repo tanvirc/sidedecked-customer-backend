@@ -170,8 +170,15 @@ export class CDNService {
    * Get fallback URL strategy
    */
   getFallbackUrl(originalUrl: string, minioUrl: string): string {
-    // If CDN is disabled, always return MinIO URL directly without any CDN processing
+    // If CDN is disabled, convert CDN URLs back to MinIO URLs
     if (!this.isEnabled()) {
+      // If the originalUrl is a CDN URL, convert it back to MinIO URL
+      if (originalUrl.includes(this.baseUrl)) {
+        const convertedUrl = this.convertCdnToMinioUrl(originalUrl)
+        if (convertedUrl) {
+          return convertedUrl
+        }
+      }
       return minioUrl || originalUrl
     }
 
@@ -185,6 +192,32 @@ export class CDNService {
     }
     
     return minioUrl || originalUrl
+  }
+
+  /**
+   * Convert CDN URL back to MinIO URL
+   */
+  private convertCdnToMinioUrl(cdnUrl: string): string | null {
+    try {
+      // Extract the path from CDN URL (https://cdn.sidedecked.com/cards/... -> cards/...)
+      const cdnPath = cdnUrl.replace(this.baseUrl + '/', '')
+      
+      // Convert to MinIO URL format
+      const minioUrl = `https://bucket-production-672e.up.railway.app/sidedecked-card-images/${cdnPath}`
+      
+      logger.debug('Converted CDN URL to MinIO URL', {
+        cdnUrl,
+        minioUrl
+      })
+      
+      return minioUrl
+    } catch (error) {
+      logger.warn('Failed to convert CDN URL to MinIO URL', {
+        cdnUrl,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      return null
+    }
   }
 
   /**
