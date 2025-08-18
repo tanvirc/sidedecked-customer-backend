@@ -170,6 +170,13 @@ export class CDNService {
    * Get fallback URL strategy
    */
   getFallbackUrl(originalUrl: string, minioUrl: string): string {
+    // TEMPORARY FIX: Force MinIO URLs for new consolidated /variants/ paths
+    // until CDN configuration is updated to handle the new path structure
+    if (originalUrl.includes('/variants/')) {
+      logger.debug('Using MinIO fallback for consolidated variants path', { originalUrl })
+      return minioUrl || originalUrl
+    }
+
     // If CDN is disabled, convert CDN URLs back to MinIO URLs
     if (!this.isEnabled()) {
       // If the originalUrl is a CDN URL, convert it back to MinIO URL
