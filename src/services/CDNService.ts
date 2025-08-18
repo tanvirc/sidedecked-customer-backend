@@ -172,8 +172,8 @@ export class CDNService {
   getFallbackUrl(originalUrl: string, minioUrl: string): string {
     // When CDN is disabled, always use MinIO URLs for optimal performance
     if (!this.isEnabled()) {
-      // Convert CDN URLs to MinIO URLs
-      if (originalUrl.includes(this.baseUrl)) {
+      // Convert CDN URLs to MinIO URLs (check for CDN domain, not full base URL)
+      if (originalUrl.includes('cdn.sidedecked.com')) {
         const convertedUrl = this.convertCdnToMinioUrl(originalUrl)
         if (convertedUrl) {
           logger.debug('CDN disabled: converted CDN URL to MinIO URL', { 
@@ -219,14 +219,43 @@ export class CDNService {
    */
   private convertCdnToMinioUrl(cdnUrl: string): string | null {
     try {
-      // Extract the path from CDN URL (https://cdn.sidedecked.com/cards/... -> cards/...)
-      const cdnPath = cdnUrl.replace(this.baseUrl + '/', '')
+      const cdnDomain = 'https://cdn.sidedecked.com'
+      
+      // Check if URL is from our CDN domain
+      if (!cdnUrl.startsWith(cdnDomain)) {
+        return null
+      }
+      
+      let cdnPath = ''
+      
+      // Handle two URL formats:
+      // Format 1: https://cdn.sidedecked.com/sidedecked-card-images/cards/... (full base URL)
+      // Format 2: https://cdn.sidedecked.com/cards/... (just domain + path)
+      if (cdnUrl.startsWith(this.baseUrl + '/')) {
+        // Full base URL format - extract path after base URL
+        cdnPath = cdnUrl.replace(this.baseUrl + '/', '')
+      } else if (cdnUrl.startsWith(cdnDomain + '/')) {
+        // Domain + path format - extract path after domain
+        const pathAfterDomain = cdnUrl.replace(cdnDomain + '/', '')
+        
+        // If path starts with 'cards/', it's already the correct format for MinIO
+        if (pathAfterDomain.startsWith('cards/')) {
+          cdnPath = pathAfterDomain
+        } else {
+          // Otherwise, assume it's a path that needs to be preserved
+          cdnPath = pathAfterDomain
+        }
+      } else {
+        logger.warn('CDN URL format not recognized', { cdnUrl })
+        return null
+      }
       
       // Convert to MinIO URL format
       const minioUrl = `https://bucket-production-672e.up.railway.app/sidedecked-card-images/${cdnPath}`
       
       logger.debug('Converted CDN URL to MinIO URL', {
         cdnUrl,
+        cdnPath,
         minioUrl
       })
       
