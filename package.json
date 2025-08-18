@@ -22,7 +22,9 @@
     "migration:show": "typeorm migration:show -d dist/src/config/database.js",
     "migration:deploy": "npm run build && npm run migration:run",
     "seed": "ts-node src/scripts/seed.ts",
-    "etl": "ts-node src/scripts/master-etl.ts"
+    "etl": "ts-node src/scripts/master-etl.ts",
+    "worker:images": "ts-node src/workers/image-worker.ts",
+    "test:images": "ts-node src/scripts/test-image-pipeline.ts"
   },
   "dependencies": {
     "algoliasearch": "^4.20.0",

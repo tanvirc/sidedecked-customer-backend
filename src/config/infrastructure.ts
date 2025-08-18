@@ -34,9 +34,74 @@ export const getRedisClient = (): Redis => {
 }
 
 // MinIO/Storage configuration
-// TODO: Implement storage service when package is ready
+let minioClient: MinioClient | null = null
+
+export const getMinioClient = (): MinioClient => {
+  if (!minioClient) {
+    if (!config.MINIO_ENDPOINT) {
+      throw new Error('MinIO configuration is missing. Please set MINIO_ENDPOINT, MINIO_ACCESS_KEY, and MINIO_SECRET_KEY')
+    }
+
+    minioClient = new MinioClient({
+      endPoint: config.MINIO_ENDPOINT,
+      port: 9000,
+      useSSL: config.NODE_ENV === 'production',
+      accessKey: config.MINIO_ACCESS_KEY || '',
+      secretKey: config.MINIO_SECRET_KEY || ''
+    })
+
+    logger.info('MinIO client initialized', {
+      endpoint: config.MINIO_ENDPOINT,
+      bucket: config.MINIO_BUCKET
+    })
+  }
+
+  return minioClient
+}
+
 export const getStorageService = () => {
-  throw new Error('Storage service not yet implemented')
+  return {
+    client: getMinioClient(),
+    bucket: config.MINIO_BUCKET,
+    
+    async ensureBucket(): Promise<void> {
+      const client = getMinioClient()
+      const bucketName = config.MINIO_BUCKET
+      
+      try {
+        const exists = await client.bucketExists(bucketName)
+        
+        if (!exists) {
+          await client.makeBucket(bucketName, config.MINIO_REGION)
+          
+          // Set bucket policy for public read access
+          const policy = {
+            Version: '2012-10-17',
+            Statement: [
+              {
+                Effect: 'Allow',
+                Principal: { AWS: ['*'] },
+                Action: ['s3:GetObject'],
+                Resource: [`arn:aws:s3:::${bucketName}/*`]
+              }
+            ]
+          }
+          
+          await client.setBucketPolicy(bucketName, JSON.stringify(policy))
+          logger.info('MinIO bucket created with public read access', { bucketName })
+        }
+      } catch (error) {
+        logger.error('Failed to ensure bucket exists', error as Error, { bucketName })
+        throw error
+      }
+    },
+    
+    getPublicUrl(key: string): string {
+      const baseUrl = config.CDN_BASE_URL || 
+        `${config.NODE_ENV === 'production' ? 'https' : 'http'}://${config.MINIO_ENDPOINT}/${config.MINIO_BUCKET}`
+      return `${baseUrl}/${key}`
+    }
+  }
 }
 
 // Algolia configuration
@@ -181,8 +246,13 @@ export const checkRedisHealth = async (): Promise<{ healthy: boolean; error?: st
 }
 
 export const checkStorageHealth = async (): Promise<{ healthy: boolean; error?: string }> => {
-  // TODO: Implement storage health check
-  return { healthy: false, error: 'Storage service not implemented' }
+  try {
+    const storage = getStorageService()
+    await storage.ensureBucket()
+    return { healthy: true }
+  } catch (error) {
+    return { healthy: false, error: (error as Error).message }
+  }
 }
 
 export const checkAlgoliaHealth = async (): Promise<{ healthy: boolean; error?: string }> => {
@@ -244,8 +314,14 @@ export const initializeInfrastructure = async (): Promise<void> => {
     await redis.ping()
     logger.info('Redis initialized')
 
-    // TODO: Initialize storage
-    logger.info('Storage initialization skipped (not implemented)')
+    // Initialize storage
+    try {
+      const storage = getStorageService()
+      await storage.ensureBucket()
+      logger.info('Storage initialized')
+    } catch (error) {
+      logger.warn('Storage initialization failed (will retry on first use)', error as Error)
+    }
 
     // Initialize Algolia (connection is lazy)
     getAlgoliaClient()

@@ -248,7 +248,7 @@ router.get('/cards/:id', async (req, res) => {
     const cardRepository = AppDataSource.getRepository(Card)
     const card = await cardRepository.findOne({
       where: { id: req.params.id },
-      relations: ['game']
+      relations: ['game', 'prints', 'prints.set']
     })
     
     console.log('DEBUG: Found card:', card ? card.name : 'none')
@@ -302,7 +302,29 @@ router.get('/cards/:id', async (req, res) => {
         id: card.game.id,
         code: card.game.code,
         name: card.game.name
-      } : null
+      } : null,
+      // Add prints with images structure
+      prints: card.prints?.map((print) => ({
+        id: print.id,
+        rarity: print.rarity,
+        artist: print.artist,
+        collectorNumber: print.collectorNumber,
+        language: print.language,
+        blurhash: print.blurhash,
+        images: {
+          thumbnail: print.imageSmall,
+          small: print.imageSmall,
+          normal: print.imageNormal,
+          large: print.imageLarge,
+          artCrop: print.imageArtCrop,
+          borderCrop: print.imageBorderCrop
+        },
+        set: print.set ? {
+          id: print.set.id,
+          code: print.set.code,
+          name: print.set.name
+        } : null
+      })) || []
     }
 
     console.log('DEBUG: Returning card:', card.name)
@@ -403,6 +425,16 @@ router.get('/cards/:id/details', async (req, res) => {
         imageSmall: print.imageSmall,
         imageNormal: print.imageNormal,
         imageLarge: print.imageLarge,
+        blurhash: print.blurhash,
+        // Add images structure for frontend compatibility
+        images: {
+          thumbnail: print.imageSmall,
+          small: print.imageSmall,
+          normal: print.imageNormal,
+          large: print.imageLarge,
+          artCrop: print.imageArtCrop,
+          borderCrop: print.imageBorderCrop
+        },
         set: print.set ? {
           id: print.set.id,
           code: print.set.code,

@@ -22,7 +22,7 @@ import {
   YugiohTransformer, 
   OnePieceTransformer 
 } from '../transformers'
-// import { getImageQueue } from '../../../../src/config/infrastructure' // Disabled for now
+import { getImageQueue } from '../../../../src/config/infrastructure'
 
 export class ETLService {
   private circuitBreakers: Map<string, CircuitBreakerState> = new Map()
@@ -752,9 +752,49 @@ export class ETLService {
    * Queue image processing for a print
    */
   private async queueImageProcessing(printId: string, images: any): Promise<void> {
-    // Image processing disabled for standalone ETL
-    logger.debug('Image processing skipped (not available in standalone mode)', { printId })
-    return
+    try {
+      // Get the image processing queue
+      const imageQueue = getImageQueue()
+      
+      // Prepare image URLs for processing
+      const imageUrls: Record<string, string> = {}
+      
+      if (images.normal) imageUrls.normal = images.normal
+      if (images.large) imageUrls.large = images.large
+      if (images.small) imageUrls.small = images.small
+      if (images.artCrop) imageUrls.artCrop = images.artCrop
+      
+      // Skip if no images to process
+      if (Object.keys(imageUrls).length === 0) {
+        logger.debug('No images to process for print', { printId })
+        return
+      }
+      
+      // Add job to queue with proper priority
+      const job = await imageQueue.add('process-images', {
+        printId,
+        imageUrls,
+        priority: 5 // Normal priority
+      }, {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 2000
+        },
+        removeOnComplete: 50,
+        removeOnFail: 25
+      })
+      
+      logger.debug('Image processing job queued', {
+        printId,
+        jobId: job.id,
+        imageCount: Object.keys(imageUrls).length
+      })
+      
+    } catch (error) {
+      logger.error('Failed to queue image processing', error as Error, { printId })
+      // Don't throw - image processing failure shouldn't stop ETL
+    }
   }
 
   /**

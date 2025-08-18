@@ -1,0 +1,454 @@
+#!/usr/bin/env ts-node
+/**
+ * Image Processing Worker
+ * 
+ * This worker processes image jobs from the Bull queue, downloading card images,
+ * converting them to WebP format, generating multiple sizes, and uploading to MinIO.
+ * 
+ * Usage:
+ *   npm run worker:images
+ *   tsx src/workers/image-worker.ts
+ */
+
+import { AppDataSource } from '../config/database'
+import { getImageQueue, getStorageService } from '../config/infrastructure'
+import { ImageQueueProcessor } from '../../packages/tcg-catalog/src/queues/ImageQueue'
+import { ImageProcessingService } from '../../packages/tcg-catalog/src/services/ImageProcessingService'
+import { logger } from '../../packages/tcg-catalog/src/utils/Logger'
+import { config } from '../config/env'
+import { Print } from '../entities/Print'
+import { CardImage, ImageStatus, ImageType } from '../entities/CardImage'
+import Queue from 'bull'
+
+interface ImageProcessingJobData {
+  printId: string
+  imageUrls: {
+    small?: string
+    normal?: string
+    large?: string
+    artCrop?: string
+  }
+  priority?: number
+}
+
+class ImageWorker {
+  private queue: Queue.Queue<ImageProcessingJobData>
+  private imageService: ImageProcessingService
+  private isRunning: boolean = false
+  private processedCount: number = 0
+  private failedCount: number = 0
+
+  constructor() {
+    this.queue = getImageQueue()
+    
+    // Initialize image processing service with MinIO config
+    this.imageService = new ImageProcessingService({
+      minioEndpoint: config.MINIO_ENDPOINT,
+      minioPort: 9000,
+      minioUseSSL: config.NODE_ENV === 'production',
+      minioAccessKey: config.MINIO_ACCESS_KEY,
+      minioSecretKey: config.MINIO_SECRET_KEY,
+      minioBucketName: config.MINIO_BUCKET,
+      cdnBaseUrl: config.CDN_BASE_URL
+    })
+  }
+
+  async start(): Promise<void> {
+    logger.info('🎨 Starting image processing worker')
+    
+    // Initialize database
+    if (!AppDataSource.isInitialized) {
+      await AppDataSource.initialize()
+      logger.info('Database connection established')
+    }
+    
+    // Ensure storage bucket exists
+    const storage = getStorageService()
+    await storage.ensureBucket()
+    logger.info('Storage bucket verified')
+    
+    this.isRunning = true
+    
+    // Process image jobs with concurrency of 3
+    this.queue.process('process-images', 3, async (job) => {
+      return await this.processImageJob(job)
+    })
+    
+    // Setup event handlers
+    this.setupEventHandlers()
+    
+    // Log initial queue stats
+    await this.logQueueStats()
+    
+    // Setup graceful shutdown
+    this.setupGracefulShutdown()
+    
+    logger.info('✅ Image worker ready and processing jobs')
+  }
+
+  private async processImageJob(job: Queue.Job<ImageProcessingJobData>): Promise<any> {
+    const { printId, imageUrls } = job.data
+    const startTime = Date.now()
+    
+    logger.info('Processing image job', {
+      jobId: job.id,
+      printId,
+      imageCount: Object.keys(imageUrls).length
+    })
+    
+    try {
+      // Get print and ensure it exists
+      const printRepo = AppDataSource.getRepository(Print)
+      const print = await printRepo.findOne({ where: { id: printId } })
+      
+      if (!print) {
+        throw new Error(`Print not found: ${printId}`)
+      }
+      
+      const processedImages: any[] = []
+      const storage = getStorageService()
+      
+      // Process each image type
+      for (const [imageType, imageUrl] of Object.entries(imageUrls)) {
+        if (!imageUrl) continue
+        
+        try {
+          // Check if image already processed
+          const cardImageRepo = AppDataSource.getRepository(CardImage)
+          let cardImage = await cardImageRepo.findOne({
+            where: { 
+              printId,
+              imageType: this.mapImageType(imageType)
+            }
+          })
+          
+          // Create or update CardImage entity
+          if (!cardImage) {
+            cardImage = cardImageRepo.create({
+              printId,
+              imageType: this.mapImageType(imageType),
+              sourceUrl: imageUrl,
+              status: ImageStatus.PROCESSING
+            })
+          } else {
+            cardImage.status = ImageStatus.PROCESSING
+            cardImage.retryCount = (cardImage.retryCount || 0) + 1
+          }
+          
+          await cardImageRepo.save(cardImage)
+          
+          // Process the image
+          const result = await this.imageService.processImageFromUrl(
+            imageUrl,
+            printId,
+            imageType
+          )
+          
+          if (result.success) {
+            // Update CardImage with processed URLs
+            cardImage.status = ImageStatus.COMPLETED
+            cardImage.storageUrls = result.urls as any
+            cardImage.blurhash = result.blurhash
+            cardImage.processedAt = new Date()
+            cardImage.cdnUrls = this.generateCDNUrls(result.urls || {}, storage)
+            
+            await cardImageRepo.save(cardImage)
+            
+            // Update Print entity with main image URLs for quick access
+            if (imageType === 'normal') {
+              print.imageNormal = result.urls?.normal
+              print.imageSmall = result.urls?.small
+              print.imageLarge = result.urls?.large
+              print.blurhash = result.blurhash
+            } else if (imageType === 'artCrop') {
+              print.imageArtCrop = result.urls?.normal
+            }
+            
+            processedImages.push({
+              type: imageType,
+              success: true,
+              blurhash: result.blurhash,
+              urls: result.urls
+            })
+            
+            logger.debug('Image processed successfully', {
+              printId,
+              imageType,
+              blurhash: result.blurhash?.substring(0, 16) + '...'
+            })
+          } else {
+            // Mark as failed
+            cardImage.status = ImageStatus.FAILED
+            cardImage.errorMessage = result.error
+            await cardImageRepo.save(cardImage)
+            
+            processedImages.push({
+              type: imageType,
+              success: false,
+              error: result.error
+            })
+            
+            logger.warn('Image processing failed', {
+              printId,
+              imageType,
+              error: result.error
+            })
+          }
+          
+          // Update job progress
+          const progress = Math.round((processedImages.length / Object.keys(imageUrls).length) * 100)
+          await job.progress(progress)
+          
+        } catch (error) {
+          logger.error('Error processing image type', error as Error, {
+            printId,
+            imageType
+          })
+          
+          processedImages.push({
+            type: imageType,
+            success: false,
+            error: (error as Error).message
+          })
+        }
+      }
+      
+      // Save print with updated image URLs
+      await printRepo.save(print)
+      
+      const processingTime = Date.now() - startTime
+      const successCount = processedImages.filter(img => img.success).length
+      const failedCount = processedImages.filter(img => !img.success).length
+      
+      this.processedCount += successCount
+      this.failedCount += failedCount
+      
+      logger.info('Image job completed', {
+        jobId: job.id,
+        printId,
+        successCount,
+        failedCount,
+        processingTime
+      })
+      
+      return {
+        printId,
+        success: failedCount === 0,
+        processedImages,
+        totalProcessed: successCount,
+        totalFailed: failedCount,
+        processingTime
+      }
+      
+    } catch (error) {
+      logger.error('Image job failed', error as Error, {
+        jobId: job.id,
+        printId
+      })
+      
+      this.failedCount++
+      
+      throw error
+    }
+  }
+
+  private mapImageType(type: string): ImageType {
+    switch (type) {
+      case 'artCrop':
+        return ImageType.ART_CROP
+      case 'borderCrop':
+        return ImageType.BORDER_CROP
+      case 'back':
+        return ImageType.BACK
+      case 'thumbnail':
+        return ImageType.THUMBNAIL
+      case 'full':
+        return ImageType.FULL
+      default:
+        return ImageType.MAIN
+    }
+  }
+
+  private generateCDNUrls(storageUrls: Record<string, string>, storage: any): Record<string, string> {
+    const cdnUrls: Record<string, string> = {}
+    
+    for (const [size, url] of Object.entries(storageUrls)) {
+      // Extract the key from the storage URL
+      const key = url.split('/').slice(-4).join('/')
+      cdnUrls[size] = storage.getPublicUrl(key)
+    }
+    
+    return cdnUrls
+  }
+
+  private setupEventHandlers(): void {
+    this.queue.on('completed', (job, result) => {
+      logger.debug('Job completed', {
+        jobId: job.id,
+        printId: result.printId,
+        success: result.success
+      })
+    })
+    
+    this.queue.on('failed', (job, error) => {
+      logger.error('Job failed', error, {
+        jobId: job.id,
+        printId: job.data?.printId,
+        attempts: job.attemptsMade
+      })
+    })
+    
+    this.queue.on('stalled', (job) => {
+      logger.warn('Job stalled', {
+        jobId: job.id,
+        printId: job.data?.printId
+      })
+    })
+    
+    this.queue.on('error', (error) => {
+      logger.error('Queue error', error)
+    })
+  }
+
+  private async logQueueStats(): Promise<void> {
+    const logStats = async () => {
+      if (!this.isRunning) return
+      
+      try {
+        const counts = await this.queue.getJobCounts()
+        const stats = {
+          waiting: counts.waiting,
+          active: counts.active,
+          completed: counts.completed,
+          failed: counts.failed,
+          delayed: counts.delayed,
+          processed: this.processedCount,
+          failedTotal: this.failedCount
+        }
+        
+        logger.info('📊 Queue statistics', stats)
+      } catch (error) {
+        logger.error('Failed to get queue stats', error as Error)
+      }
+    }
+    
+    // Log stats every minute
+    setInterval(logStats, 60000)
+    
+    // Log initial stats
+    await logStats()
+  }
+
+  private setupGracefulShutdown(): void {
+    const shutdown = async (signal: string) => {
+      logger.info(`Received ${signal}, starting graceful shutdown...`)
+      
+      this.isRunning = false
+      
+      // Stop accepting new jobs
+      await this.queue.pause()
+      
+      // Wait for active jobs to complete (max 30 seconds)
+      const timeout = setTimeout(() => {
+        logger.warn('Graceful shutdown timeout, forcing exit')
+        process.exit(1)
+      }, 30000)
+      
+      let activeCount = 0
+      do {
+        const counts = await this.queue.getJobCounts()
+        activeCount = counts.active
+        
+        if (activeCount > 0) {
+          logger.info(`Waiting for ${activeCount} active jobs to complete...`)
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+      } while (activeCount > 0)
+      
+      clearTimeout(timeout)
+      
+      // Close queue connection
+      await this.queue.close()
+      
+      // Close database connection
+      if (AppDataSource.isInitialized) {
+        await AppDataSource.destroy()
+      }
+      
+      logger.info('✅ Graceful shutdown complete')
+      logger.info(`Final stats: Processed ${this.processedCount}, Failed ${this.failedCount}`)
+      
+      process.exit(0)
+    }
+    
+    process.on('SIGTERM', () => shutdown('SIGTERM'))
+    process.on('SIGINT', () => shutdown('SIGINT'))
+  }
+
+  // Utility function to clean old completed/failed jobs
+  async cleanOldJobs(olderThanHours: number = 24): Promise<void> {
+    const olderThanMs = olderThanHours * 60 * 60 * 1000
+    
+    await this.queue.clean(olderThanMs, 'completed', 100)
+    await this.queue.clean(olderThanMs, 'failed', 50)
+    
+    logger.info('Old jobs cleaned', { olderThanHours })
+  }
+
+  // Utility function to retry failed images
+  async retryFailedImages(): Promise<void> {
+    const cardImageRepo = AppDataSource.getRepository(CardImage)
+    
+    const failedImages = await cardImageRepo.find({
+      where: {
+        status: ImageStatus.FAILED,
+        retryCount: 3 // Less than max retries
+      },
+      take: 100
+    })
+    
+    logger.info(`Found ${failedImages.length} failed images to retry`)
+    
+    for (const image of failedImages) {
+      await this.queue.add('process-images', {
+        printId: image.printId,
+        imageUrls: {
+          [image.imageType]: image.sourceUrl
+        },
+        priority: 3 // Higher priority for retries
+      })
+      
+      // Mark as retry
+      image.status = ImageStatus.RETRY
+      image.nextRetryAt = new Date(Date.now() + 60000) // Retry in 1 minute
+      await cardImageRepo.save(image)
+    }
+    
+    logger.info(`Queued ${failedImages.length} images for retry`)
+  }
+}
+
+// Start the worker
+if (require.main === module) {
+  const worker = new ImageWorker()
+  
+  worker.start().catch(error => {
+    logger.error('Failed to start image worker', error)
+    process.exit(1)
+  })
+  
+  // Setup periodic cleanup and retry
+  setInterval(() => {
+    worker.cleanOldJobs(48).catch(error => {
+      logger.error('Failed to clean old jobs', error)
+    })
+  }, 6 * 60 * 60 * 1000) // Every 6 hours
+  
+  setInterval(() => {
+    worker.retryFailedImages().catch(error => {
+      logger.error('Failed to retry failed images', error)
+    })
+  }, 5 * 60 * 1000) // Every 5 minutes
+}
+
+export default ImageWorker
