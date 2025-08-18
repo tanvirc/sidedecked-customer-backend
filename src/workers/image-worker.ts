@@ -18,6 +18,7 @@ import { logger } from '../../packages/tcg-catalog/src/utils/Logger'
 import { config } from '../config/env'
 import { Print } from '../entities/Print'
 import { CardImage, ImageStatus, ImageType } from '../entities/CardImage'
+import { cdnService } from '../services/CDNService'
 import Queue from 'bull'
 
 interface ImageProcessingJobData {
@@ -200,7 +201,8 @@ class ImageWorker {
             cardImage.storageUrls = result.urls as any
             cardImage.blurhash = result.blurhash || null
             cardImage.processedAt = new Date()
-            cardImage.cdnUrls = this.generateCDNUrls(result.urls || {}, storage)
+            // Always set CDN URLs to null - transformation happens at API layer
+            cardImage.cdnUrls = null
             
             await cardImageRepo.save(cardImage)
             
@@ -317,18 +319,6 @@ class ImageWorker {
       default:
         return ImageType.MAIN
     }
-  }
-
-  private generateCDNUrls(storageUrls: Record<string, string>, storage: any): Record<string, string> {
-    const cdnUrls: Record<string, string> = {}
-    
-    for (const [size, url] of Object.entries(storageUrls)) {
-      // Extract the key from the storage URL
-      const key = url.split('/').slice(-4).join('/')
-      cdnUrls[size] = storage.getPublicUrl(key)
-    }
-    
-    return cdnUrls
   }
 
   private setupEventHandlers(): void {

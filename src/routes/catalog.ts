@@ -66,34 +66,14 @@ async function getProcessedImageUrls(print: Print): Promise<{
 
     console.log(`DEBUG: Found ${processedImages.length} processed images for print ${print.id}`)
 
-    // Build image URLs using CDN service with intelligent fallbacks
-    const storage = getStorageService()
     const images: any = {}
 
-
-    // If we have processed images, use CDN service for URL generation
+    // Process stored MinIO URLs and transform to CDN if enabled
     if (processedImages.length > 0) {
       for (const cardImage of processedImages) {
         console.log(`DEBUG: Processing CardImage ${cardImage.id}, type: ${cardImage.imageType}`)
         
-        // Priority 1: Use CDN URLs if available and CDN is enabled
-        if (cardImage.cdnUrls && cdnService.isEnabled()) {
-          const cdnUrls = cardImage.cdnUrls as Record<string, string>
-          console.log('DEBUG: Found CDN URLs:', Object.keys(cdnUrls))
-          
-          // Use CDN service to generate optimized URLs
-          const cdnVariants = cdnService.generateImageVariants('', cdnUrls)
-          
-          // Map CDN URLs to our standard image sizes with fallback logic
-          if (cdnVariants.thumbnail && !images.thumbnail) images.thumbnail = cdnVariants.thumbnail
-          if (cdnVariants.small && !images.small) images.small = cdnVariants.small
-          if (cdnVariants.normal && !images.normal) images.normal = cdnVariants.normal
-          if (cdnVariants.large && !images.large) images.large = cdnVariants.large
-          if (cdnVariants.artCrop && !images.artCrop) images.artCrop = cdnVariants.artCrop
-          if (cdnVariants.borderCrop && !images.borderCrop) images.borderCrop = cdnVariants.borderCrop
-        } 
-        
-        // Priority 2: Storage URLs with CDN proxy if enabled
+        // Process storage URLs (always MinIO URLs from database)
         if (cardImage.storageUrls) {
           const storageUrls = cardImage.storageUrls as Record<string, string>
           console.log('DEBUG: Found storage URLs:', Object.keys(storageUrls))
@@ -102,28 +82,11 @@ async function getProcessedImageUrls(print: Print): Promise<{
             if (!url) continue
             
             try {
-              // Extract the MinIO key more reliably
-              let key: string
+              // Transform MinIO URL to CDN URL if CDN is enabled
+              // cdnService.getFallbackUrl will return CDN URL when enabled, MinIO URL when disabled
+              const publicUrl = cdnService.getFallbackUrl(url, url)
               
-              if (url.startsWith('http')) {
-                const urlObj = new URL(url)
-                const pathParts = urlObj.pathname.split('/').filter(Boolean)
-                key = pathParts.slice(1).join('/')
-              } else {
-                key = url.startsWith('/') ? url.substring(1) : url
-                const pathParts = key.split('/').filter(Boolean)
-                if (pathParts[0] === 'sidedecked-images') {
-                  key = pathParts.slice(1).join('/')
-                }
-              }
-              
-              console.log(`DEBUG: Extracted key "${key}" from URL "${url}"`)
-              
-              // Use CDN service for URL generation with fallback
-              const minioUrl = storage.getPublicUrl(key)
-              const publicUrl = cdnService.getFallbackUrl(key, minioUrl)
-              
-              console.log(`DEBUG: Generated public URL: ${publicUrl}`)
+              console.log(`DEBUG: Transformed "${url}" to "${publicUrl}"`)
               
               // Map to image sizes, avoid overwriting existing URLs
               if (size === 'thumbnail' && !images.thumbnail) images.thumbnail = publicUrl

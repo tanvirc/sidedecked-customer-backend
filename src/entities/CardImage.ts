@@ -77,7 +77,7 @@ export class CardImage {
     normal?: string
     large?: string
     original?: string
-  }
+  } | null
 
   // Processing status
   @Column({

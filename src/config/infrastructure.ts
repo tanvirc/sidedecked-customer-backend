@@ -122,9 +122,17 @@ export const getStorageService = () => {
     },
     
     getPublicUrl(key: string): string {
-      const baseUrl = config.CDN_BASE_URL || 
-        `${config.NODE_ENV === 'production' ? 'https' : 'http'}://${config.MINIO_ENDPOINT}/${config.MINIO_BUCKET}`
-      return `${baseUrl}/${key}`
+      // Always return MinIO URLs - CDN transformation happens at API layer
+      const endpoint = config.MINIO_ENDPOINT || 'localhost:9000'
+      const useSSL = config.NODE_ENV === 'production'
+      const protocol = useSSL ? 'https' : 'http'
+      
+      // Handle endpoint that might already have protocol
+      if (endpoint.startsWith('https://') || endpoint.startsWith('http://')) {
+        return `${endpoint}/${config.MINIO_BUCKET}/${key}`
+      }
+      
+      return `${protocol}://${endpoint}/${config.MINIO_BUCKET}/${key}`
     }
   }
 }
