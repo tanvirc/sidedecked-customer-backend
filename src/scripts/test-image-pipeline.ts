@@ -17,7 +17,7 @@
 import { AppDataSource } from '../config/database'
 import { getImageQueue, getStorageService } from '../config/infrastructure'
 import { ETLService } from '../../packages/tcg-catalog/src/services/ETLService'
-import { ETLJobType } from '../../packages/tcg-catalog/src/entities/ETLJob'
+import { ETLJobType } from '../entities/ETLJob'
 import { logger } from '../../packages/tcg-catalog/src/utils/Logger'
 import { Card } from '../entities/Card'
 import { Print } from '../entities/Print'
