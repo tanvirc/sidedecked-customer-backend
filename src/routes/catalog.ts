@@ -6,8 +6,98 @@ import { CardSet } from '../entities/CardSet'
 import { Print } from '../entities/Print'
 import { Format } from '../entities/Format'
 import { CatalogSKU } from '../entities/CatalogSKU'
+import { CardImage, ImageStatus } from '../entities/CardImage'
+import { getStorageService } from '../config/infrastructure'
 
 const router = Router()
+
+// Helper function to get processed image URLs, fallback to external URLs
+async function getProcessedImageUrls(print: Print): Promise<{
+  thumbnail?: string
+  small?: string
+  normal?: string
+  large?: string
+  artCrop?: string
+  borderCrop?: string
+}> {
+  try {
+    // Try to get processed images from CardImage table
+    const cardImageRepo = AppDataSource.getRepository(CardImage)
+    const processedImages = await cardImageRepo.find({
+      where: { 
+        printId: print.id,
+        status: ImageStatus.COMPLETED
+      }
+    })
+
+    // Build image URLs object with processed images first, then fallbacks
+    const storage = getStorageService()
+    const images: any = {}
+
+    // If we have processed images, use CDN URLs
+    if (processedImages.length > 0) {
+      for (const cardImage of processedImages) {
+        if (cardImage.cdnUrls) {
+          const cdnUrls = cardImage.cdnUrls as Record<string, string>
+          // Map to our standard image sizes
+          images.thumbnail = cdnUrls.thumbnail || cdnUrls.small
+          images.small = cdnUrls.small || cdnUrls.normal
+          images.normal = cdnUrls.normal || cdnUrls.large
+          images.large = cdnUrls.large || cdnUrls.normal
+          if (cdnUrls.artCrop) images.artCrop = cdnUrls.artCrop
+        } else if (cardImage.storageUrls) {
+          // Fallback to direct MinIO URLs
+          const storageUrls = cardImage.storageUrls as Record<string, string>
+          for (const [size, url] of Object.entries(storageUrls)) {
+            const key = url.split('/').slice(-4).join('/')
+            const publicUrl = storage.getPublicUrl(key)
+            
+            switch (size) {
+              case 'thumbnail':
+                images.thumbnail = publicUrl
+                break
+              case 'small':
+                images.small = publicUrl
+                break
+              case 'normal':
+                images.normal = publicUrl
+                break
+              case 'large':
+                images.large = publicUrl
+                break
+              case 'artCrop':
+                images.artCrop = publicUrl
+                break
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback to external URLs if no processed images
+    if (!images.normal && !images.small && !images.large) {
+      images.thumbnail = print.imageSmall || undefined
+      images.small = print.imageSmall || undefined
+      images.normal = print.imageNormal || undefined
+      images.large = print.imageLarge || undefined
+      images.artCrop = print.imageArtCrop || undefined
+      images.borderCrop = print.imageBorderCrop || undefined
+    }
+
+    return images
+  } catch (error) {
+    console.error('Error getting processed image URLs:', error)
+    // Fallback to external URLs on error
+    return {
+      thumbnail: print.imageSmall || undefined,
+      small: print.imageSmall || undefined,
+      normal: print.imageNormal || undefined,
+      large: print.imageLarge || undefined,
+      artCrop: print.imageArtCrop || undefined,
+      borderCrop: print.imageBorderCrop || undefined
+    }
+  }
+}
 
 // Get all games
 router.get('/games', async (req, res) => {
@@ -304,27 +394,20 @@ router.get('/cards/:id', async (req, res) => {
         name: card.game.name
       } : null,
       // Add prints with images structure
-      prints: card.prints?.map((print) => ({
+      prints: await Promise.all(card.prints?.map(async (print) => ({
         id: print.id,
         rarity: print.rarity,
         artist: print.artist,
         collectorNumber: print.collectorNumber,
         language: print.language,
         blurhash: print.blurhash,
-        images: {
-          thumbnail: print.imageSmall,
-          small: print.imageSmall,
-          normal: print.imageNormal,
-          large: print.imageLarge,
-          artCrop: print.imageArtCrop,
-          borderCrop: print.imageBorderCrop
-        },
+        images: await getProcessedImageUrls(print),
         set: print.set ? {
           id: print.set.id,
           code: print.set.code,
           name: print.set.name
         } : null
-      })) || []
+      })) || [])
     }
 
     console.log('DEBUG: Returning card:', card.name)
@@ -410,7 +493,7 @@ router.get('/cards/:id/details', async (req, res) => {
         name: card.game.name
       } : null,
       // Add prints using TypeORM relation data
-      prints: card.prints?.map((print) => ({
+      prints: await Promise.all(card.prints?.map(async (print) => ({
         id: print.id,
         rarity: print.rarity,
         artist: print.artist,
@@ -427,20 +510,13 @@ router.get('/cards/:id/details', async (req, res) => {
         imageLarge: print.imageLarge,
         blurhash: print.blurhash,
         // Add images structure for frontend compatibility
-        images: {
-          thumbnail: print.imageSmall,
-          small: print.imageSmall,
-          normal: print.imageNormal,
-          large: print.imageLarge,
-          artCrop: print.imageArtCrop,
-          borderCrop: print.imageBorderCrop
-        },
+        images: await getProcessedImageUrls(print),
         set: print.set ? {
           id: print.set.id,
           code: print.set.code,
           name: print.set.name
         } : null
-      })) || [],
+      })) || []),
       // Add format legality (from first print)
       legality: {
         standard: card.prints?.[0]?.isLegalStandard || false,

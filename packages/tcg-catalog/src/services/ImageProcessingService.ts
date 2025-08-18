@@ -195,12 +195,12 @@ export class ImageProcessingService {
     }
 
     // Define size configurations
-    const sizeConfigs: Record<ImageSize, { width: number; height?: number; quality: number }> = {
+    const sizeConfigs: Record<ImageSize, { width?: number; height?: number; quality: number }> = {
       thumbnail: { width: 150, height: 209, quality: 80 },
       small: { width: 300, height: 418, quality: 85 },
       normal: { width: 488, height: 680, quality: 90 },
       large: { width: 672, height: 936, quality: 95 },
-      original: { width: 0, quality: 100 } // Original size
+      original: { quality: 100 } // Original size - no resize
     }
 
     for (const [size, config] of Object.entries(sizeConfigs) as [ImageSize, typeof sizeConfigs[ImageSize]][]) {
@@ -208,10 +208,14 @@ export class ImageProcessingService {
         logger.debug('Processing image size', { printId, imageType, size, config })
 
         let pipeline = sharp(imageBuffer)
-          .resize(config.width, config.height, {
+
+        // Only resize if width and height are specified (not for original)
+        if (config.width && config.height) {
+          pipeline = pipeline.resize(config.width, config.height, {
             fit: 'cover',
             position: 'center'
           })
+        }
 
         // Convert to WebP with specific quality
         const processedBuffer = await pipeline

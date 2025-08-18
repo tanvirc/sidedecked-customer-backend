@@ -41,6 +41,37 @@ class ImageWorker {
   constructor() {
     this.queue = getImageQueue()
     
+    // Parse MinIO endpoint to extract host, port and SSL settings
+    const minioEndpoint = config.MINIO_ENDPOINT || ''
+    let endpoint = minioEndpoint
+    let port = 9000
+    let useSSL = false
+    
+    // Remove protocol and extract port
+    if (endpoint.startsWith('https://')) {
+      endpoint = endpoint.replace('https://', '')
+      useSSL = true
+      port = 443
+    } else if (endpoint.startsWith('http://')) {
+      endpoint = endpoint.replace('http://', '')
+      useSSL = false
+      port = 80
+    }
+    
+    // Extract port if specified in endpoint
+    if (endpoint.includes(':')) {
+      const parts = endpoint.split(':')
+      endpoint = parts[0]
+      port = parseInt(parts[1]) || port
+    }
+    
+    logger.info('MinIO configuration', {
+      endpoint,
+      port,
+      useSSL,
+      bucket: config.MINIO_BUCKET
+    })
+    
     // Initialize image processing service with MinIO config
     this.imageService = new ImageProcessingService({
       storageProvider: 'minio',
@@ -63,9 +94,9 @@ class ImageWorker {
       },
       maxRetries: 3,
       retryDelayMs: 2000,
-      minioEndpoint: config.MINIO_ENDPOINT,
-      minioPort: 9000,
-      minioUseSSL: config.NODE_ENV === 'production',
+      minioEndpoint: endpoint,
+      minioPort: port,
+      minioUseSSL: useSSL,
       minioAccessKey: config.MINIO_ACCESS_KEY,
       minioSecretKey: config.MINIO_SECRET_KEY,
       minioBucketName: config.MINIO_BUCKET
