@@ -334,10 +334,12 @@ export class ImageProcessingService {
   }
 
   /**
-   * Generate accessible URLs for images
+   * Generate accessible URLs for images (always returns MinIO URLs for database storage)
    */
   private generateImageUrls(printId: string, imageType: string): Record<ImageSize, string> {
-    const baseUrl = this.config.cdnBaseUrl || this.generateMinioBaseUrl()
+    // ALWAYS use MinIO URLs for database storage
+    // CDN transformation happens at the API layer via CDNService
+    const baseUrl = this.generateMinioBaseUrl()
     const urls: Record<ImageSize, string> = {
       thumbnail: '',
       small: '',
