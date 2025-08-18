@@ -30,63 +30,105 @@ async function getProcessedImageUrls(print: Print): Promise<{
       }
     })
 
+    console.log(`DEBUG: Found ${processedImages.length} processed images for print ${print.id}`)
+
     // Build image URLs object with processed images first, then fallbacks
     const storage = getStorageService()
     const images: any = {}
 
-    // If we have processed images, use CDN URLs
+    // If we have processed images, use CDN URLs first, then storage URLs
     if (processedImages.length > 0) {
       for (const cardImage of processedImages) {
+        console.log(`DEBUG: Processing CardImage ${cardImage.id}, type: ${cardImage.imageType}`)
+        
+        // Prefer CDN URLs if available
         if (cardImage.cdnUrls) {
           const cdnUrls = cardImage.cdnUrls as Record<string, string>
-          // Map to our standard image sizes
-          images.thumbnail = cdnUrls.thumbnail || cdnUrls.small
-          images.small = cdnUrls.small || cdnUrls.normal
-          images.normal = cdnUrls.normal || cdnUrls.large
-          images.large = cdnUrls.large || cdnUrls.normal
-          if (cdnUrls.artCrop) images.artCrop = cdnUrls.artCrop
+          console.log('DEBUG: Found CDN URLs:', Object.keys(cdnUrls))
+          
+          // Map CDN URLs to our standard image sizes
+          if (cdnUrls.thumbnail && !images.thumbnail) images.thumbnail = cdnUrls.thumbnail
+          if (cdnUrls.small && !images.small) images.small = cdnUrls.small
+          if (cdnUrls.normal && !images.normal) images.normal = cdnUrls.normal
+          if (cdnUrls.large && !images.large) images.large = cdnUrls.large
+          if (cdnUrls.artCrop && !images.artCrop) images.artCrop = cdnUrls.artCrop
+          if (cdnUrls.borderCrop && !images.borderCrop) images.borderCrop = cdnUrls.borderCrop
+          
         } else if (cardImage.storageUrls) {
           // Fallback to direct MinIO URLs
           const storageUrls = cardImage.storageUrls as Record<string, string>
+          console.log('DEBUG: Found storage URLs:', Object.keys(storageUrls))
+          
           for (const [size, url] of Object.entries(storageUrls)) {
-            const key = url.split('/').slice(-4).join('/')
-            const publicUrl = storage.getPublicUrl(key)
+            if (!url) continue
             
-            switch (size) {
-              case 'thumbnail':
-                images.thumbnail = publicUrl
-                break
-              case 'small':
-                images.small = publicUrl
-                break
-              case 'normal':
-                images.normal = publicUrl
-                break
-              case 'large':
-                images.large = publicUrl
-                break
-              case 'artCrop':
-                images.artCrop = publicUrl
-                break
+            try {
+              // Extract the MinIO key more reliably
+              // Expected format: https://domain/bucket/path/to/file.webp
+              // or: /bucket/path/to/file.webp
+              let key: string
+              
+              if (url.startsWith('http')) {
+                // Parse URL to extract path after bucket
+                const urlObj = new URL(url)
+                const pathParts = urlObj.pathname.split('/').filter(Boolean)
+                // Skip bucket name (first part) to get the object key
+                key = pathParts.slice(1).join('/')
+              } else {
+                // Handle relative paths
+                key = url.startsWith('/') ? url.substring(1) : url
+                // Remove bucket name if present
+                const pathParts = key.split('/').filter(Boolean)
+                if (pathParts[0] === 'sidedecked-images') {
+                  key = pathParts.slice(1).join('/')
+                }
+              }
+              
+              console.log(`DEBUG: Extracted key "${key}" from URL "${url}"`)
+              
+              const publicUrl = storage.getPublicUrl(key)
+              console.log(`DEBUG: Generated public URL: ${publicUrl}`)
+              
+              // Map to image sizes, avoid overwriting existing URLs
+              if (size === 'thumbnail' && !images.thumbnail) images.thumbnail = publicUrl
+              else if (size === 'small' && !images.small) images.small = publicUrl
+              else if (size === 'normal' && !images.normal) images.normal = publicUrl
+              else if (size === 'large' && !images.large) images.large = publicUrl
+              else if (size === 'artCrop' && !images.artCrop) images.artCrop = publicUrl
+              else if (size === 'borderCrop' && !images.borderCrop) images.borderCrop = publicUrl
+              
+            } catch (urlError) {
+              console.warn(`DEBUG: Failed to process storage URL for size ${size}:`, urlError)
             }
           }
         }
       }
     }
 
-    // Fallback to external URLs if no processed images
+    // Ensure fallback hierarchy for missing sizes
+    if (!images.thumbnail) images.thumbnail = images.small || images.normal
+    if (!images.small) images.small = images.normal || images.thumbnail
+    if (!images.normal) images.normal = images.large || images.small
+    if (!images.large) images.large = images.normal
+
+    // Final fallback to external URLs if no processed images found
     if (!images.normal && !images.small && !images.large) {
-      images.thumbnail = print.imageSmall || undefined
-      images.small = print.imageSmall || undefined
-      images.normal = print.imageNormal || undefined
-      images.large = print.imageLarge || undefined
-      images.artCrop = print.imageArtCrop || undefined
-      images.borderCrop = print.imageBorderCrop || undefined
+      console.log('DEBUG: No processed images found, falling back to external URLs')
+      return {
+        thumbnail: print.imageSmall || undefined,
+        small: print.imageSmall || undefined,
+        normal: print.imageNormal || undefined,
+        large: print.imageLarge || undefined,
+        artCrop: print.imageArtCrop || undefined,
+        borderCrop: print.imageBorderCrop || undefined
+      }
     }
 
+    console.log('DEBUG: Final image URLs:', images)
     return images
+    
   } catch (error) {
-    console.error('Error getting processed image URLs:', error)
+    console.error('Error getting processed image URLs for print', print.id, ':', error)
     // Fallback to external URLs on error
     return {
       thumbnail: print.imageSmall || undefined,
@@ -219,79 +261,97 @@ router.get('/cards/search', async (req, res) => {
 
     console.log('DEBUG: Searching cards with filters:', { games, types, query, page, limit })
 
-    // Build SQL query with filters (using correct camelCase column)
-    let sqlQuery = `
-      SELECT c.*, g.code as game_code, g.name as game_name
-      FROM cards c
-      LEFT JOIN games g ON c."gameId" = g.id
-      WHERE c.deleted_at IS NULL
-    `
-    const params: any[] = []
-    let paramIndex = 1
+    // Use TypeORM to get cards with relations for proper image handling
+    const cardRepository = AppDataSource.getRepository(Card)
+    let queryBuilder = cardRepository
+      .createQueryBuilder('card')
+      .leftJoinAndSelect('card.game', 'game')
+      .leftJoinAndSelect('card.prints', 'prints')
+      .leftJoinAndSelect('prints.set', 'set')
+      .where('card.deletedAt IS NULL')
 
     // Game filter
     if (games) {
       const gameArray = Array.isArray(games) ? games : [games]
-      const placeholders = gameArray.map(() => `$${paramIndex++}`).join(',')
-      sqlQuery += ` AND g.code IN (${placeholders})`
-      params.push(...gameArray)
+      queryBuilder.andWhere('game.code IN (:...games)', { games: gameArray })
     }
 
-    // Text search (using correct camelCase column names)
+    // Text search
     if (query) {
-      sqlQuery += ` AND (c.name ILIKE $${paramIndex} OR c."oracleText" ILIKE $${paramIndex} OR c."flavorText" ILIKE $${paramIndex})`
-      params.push(`%${query}%`)
-      paramIndex++
+      queryBuilder.andWhere(
+        '(card.name ILIKE :query OR card.oracleText ILIKE :query OR card.flavorText ILIKE :query)',
+        { query: `%${query}%` }
+      )
     }
 
     // Add ordering
-    sqlQuery += ` ORDER BY c.name ASC`
-    
-    // Add pagination
-    sqlQuery += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`
-    params.push(limitNum, offset)
+    queryBuilder.orderBy('card.name', 'ASC')
 
-    console.log('DEBUG: SQL Query:', sqlQuery)
-    console.log('DEBUG: Parameters:', params)
+    // Get total count first
+    const totalCount = await queryBuilder.getCount()
 
-    const cards = await AppDataSource.query(sqlQuery, params)
-    
-    // Get total count (with same filters, using correct camelCase column)
-    let countQuery = 'SELECT COUNT(*) as count FROM cards c LEFT JOIN games g ON c."gameId" = g.id WHERE c.deleted_at IS NULL'
-    let countParams: any[] = []
-    let countParamIndex = 1
-    
-    // Apply same filters for count
-    if (games) {
-      const gameArray = Array.isArray(games) ? games : [games]
-      const placeholders = gameArray.map(() => `$${countParamIndex++}`).join(',')
-      countQuery += ` AND g.code IN (${placeholders})`
-      countParams.push(...gameArray)
-    }
-    
-    if (query) {
-      countQuery += ` AND (c.name ILIKE $${countParamIndex} OR c."oracleText" ILIKE $${countParamIndex} OR c."flavorText" ILIKE $${countParamIndex})`
-      countParams.push(`%${query}%`)
-    }
-    
-    const totalResults = await AppDataSource.query(countQuery, countParams)
-    const totalCount = parseInt(totalResults[0].count)
+    // Apply pagination
+    queryBuilder.skip(offset).take(limitNum)
+
+    const cards = await queryBuilder.getMany()
 
     console.log('DEBUG: Found cards:', cards.length, 'Total:', totalCount)
 
-    // Convert to search results format (using correct camelCase field names)
-    const hits = cards.map((card: any) => ({
-      card: {
-        id: card.id,
-        name: card.name,
-        gameId: card.gameId,
-        gameCode: card.game_code,
-        gameName: card.game_name,
-        oracleText: card.oracleText,
-        flavorText: card.flavorText
-      },
-      print: null,
-      relevanceScore: 1.0
+    // Convert to search results format with proper image data
+    const hits = await Promise.all(cards.map(async (card) => {
+      // Get the first print with images
+      const print = card.prints?.[0]
+      let processedImages = {}
+      
+      if (print) {
+        processedImages = await getProcessedImageUrls(print)
+      }
+
+      return {
+        card: {
+          id: card.id,
+          name: card.name,
+          gameId: card.gameId,
+          gameCode: card.game?.code,
+          gameName: card.game?.name,
+          oracleText: card.oracleText,
+          flavorText: card.flavorText,
+          manaCost: card.manaCost,
+          manaValue: card.manaValue,
+          colors: card.colors,
+          powerValue: card.powerValue,
+          defenseValue: card.defenseValue,
+          hp: card.hp,
+          primaryType: card.primaryType,
+          subtypes: card.subtypes,
+          game: card.game ? {
+            id: card.game.id,
+            code: card.game.code,
+            name: card.game.name
+          } : null,
+          // Include prints with image data for frontend compatibility
+          prints: print ? [{
+            id: print.id,
+            rarity: print.rarity,
+            artist: print.artist,
+            collectorNumber: print.collectorNumber,
+            language: print.language,
+            blurhash: print.blurhash,
+            images: processedImages,
+            set: print.set ? {
+              id: print.set.id,
+              code: print.set.code,
+              name: print.set.name
+            } : null
+          }] : []
+        },
+        print: print ? {
+          id: print.id,
+          rarity: print.rarity,
+          images: processedImages
+        } : null,
+        relevanceScore: 1.0
+      }
     }))
 
     // Return search response directly for frontend compatibility
