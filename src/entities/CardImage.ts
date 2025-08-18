@@ -67,7 +67,7 @@ export class CardImage {
   }
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  blurhash: string
+  blurhash: string | null
 
   // CDN URLs (when CDN is available)
   @Column({ type: 'jsonb', nullable: true })
@@ -91,7 +91,7 @@ export class CardImage {
   processedAt: Date
 
   @Column({ type: 'text', nullable: true })
-  errorMessage: string
+  errorMessage: string | null
 
   @Column({ type: 'integer', default: 0 })
   retryCount: number

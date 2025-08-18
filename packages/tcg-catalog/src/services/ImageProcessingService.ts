@@ -11,10 +11,34 @@ export class ImageProcessingService {
 
   constructor(config: ImageProcessingConfig) {
     this.config = config
+    
+    // Parse endpoint to remove protocol and extract port
+    let endpoint = config.minioEndpoint || 'localhost'
+    let port = config.minioPort || 9000
+    let useSSL = config.minioUseSSL || false
+    
+    // Remove protocol if present
+    if (endpoint.startsWith('https://')) {
+      endpoint = endpoint.replace('https://', '')
+      useSSL = true
+      port = 443
+    } else if (endpoint.startsWith('http://')) {
+      endpoint = endpoint.replace('http://', '')
+      useSSL = false
+      port = 80
+    }
+    
+    // Extract port if specified
+    if (endpoint.includes(':')) {
+      const parts = endpoint.split(':')
+      endpoint = parts[0]
+      port = parseInt(parts[1]) || port
+    }
+    
     this.minioClient = new MinioClient({
-      endPoint: config.minioEndpoint || 'localhost',
-      port: config.minioPort || 9000,
-      useSSL: config.minioUseSSL || false,
+      endPoint: endpoint,
+      port: port,
+      useSSL: useSSL,
       accessKey: config.minioAccessKey || '',
       secretKey: config.minioSecretKey || ''
     })

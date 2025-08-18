@@ -145,22 +145,22 @@ export class Print {
 
   // Images (main references)
   @Column({ type: 'varchar', length: 500, nullable: true })
-  imageSmall: string
+  imageSmall: string | null
 
   @Column({ type: 'varchar', length: 500, nullable: true })
-  imageNormal: string
+  imageNormal: string | null
 
   @Column({ type: 'varchar', length: 500, nullable: true })
-  imageLarge: string
+  imageLarge: string | null
 
   @Column({ type: 'varchar', length: 500, nullable: true })
-  imageArtCrop: string
+  imageArtCrop: string | null
 
   @Column({ type: 'varchar', length: 500, nullable: true })
-  imageBorderCrop: string
+  imageBorderCrop: string | null
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  blurhash: string
+  blurhash: string | null
 
   // Relations
   @OneToMany(() => CatalogSKU, sku => sku.print)

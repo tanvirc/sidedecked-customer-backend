@@ -787,7 +787,7 @@ export class ETLService {
       
       logger.debug('Image processing job queued', {
         printId,
-        jobId: job.id,
+        jobId: String(job.id),
         imageCount: Object.keys(imageUrls).length
       })
       

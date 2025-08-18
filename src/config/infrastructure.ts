@@ -42,16 +42,41 @@ export const getMinioClient = (): MinioClient => {
       throw new Error('MinIO configuration is missing. Please set MINIO_ENDPOINT, MINIO_ACCESS_KEY, and MINIO_SECRET_KEY')
     }
 
+    // Parse endpoint to remove protocol and extract port
+    let endpoint = config.MINIO_ENDPOINT
+    let port = 9000
+    let useSSL = config.NODE_ENV === 'production'
+    
+    // Remove protocol if present
+    if (endpoint.startsWith('https://')) {
+      endpoint = endpoint.replace('https://', '')
+      useSSL = true
+      port = 443
+    } else if (endpoint.startsWith('http://')) {
+      endpoint = endpoint.replace('http://', '')
+      useSSL = false
+      port = 80
+    }
+    
+    // Extract port if specified
+    if (endpoint.includes(':')) {
+      const parts = endpoint.split(':')
+      endpoint = parts[0]
+      port = parseInt(parts[1]) || port
+    }
+
     minioClient = new MinioClient({
-      endPoint: config.MINIO_ENDPOINT,
-      port: 9000,
-      useSSL: config.NODE_ENV === 'production',
+      endPoint: endpoint,
+      port: port,
+      useSSL: useSSL,
       accessKey: config.MINIO_ACCESS_KEY || '',
       secretKey: config.MINIO_SECRET_KEY || ''
     })
 
     logger.info('MinIO client initialized', {
-      endpoint: config.MINIO_ENDPOINT,
+      endpoint: endpoint,
+      port: port,
+      useSSL: useSSL,
       bucket: config.MINIO_BUCKET
     })
   }

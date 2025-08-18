@@ -43,13 +43,32 @@ class ImageWorker {
     
     // Initialize image processing service with MinIO config
     this.imageService = new ImageProcessingService({
+      storageProvider: 'minio',
+      bucket: config.MINIO_BUCKET,
+      cdnBaseUrl: config.CDN_BASE_URL,
+      enableWebP: true,
+      enableBlurhash: true,
+      compressionQuality: {
+        thumbnail: 80,
+        small: 85,
+        normal: 90,
+        large: 95,
+        original: 100
+      },
+      sizes: {
+        thumbnail: { width: 150, height: 209 },
+        small: { width: 300, height: 418 },
+        normal: { width: 488, height: 680 },
+        large: { width: 672, height: 936 }
+      },
+      maxRetries: 3,
+      retryDelayMs: 2000,
       minioEndpoint: config.MINIO_ENDPOINT,
       minioPort: 9000,
       minioUseSSL: config.NODE_ENV === 'production',
       minioAccessKey: config.MINIO_ACCESS_KEY,
       minioSecretKey: config.MINIO_SECRET_KEY,
-      minioBucketName: config.MINIO_BUCKET,
-      cdnBaseUrl: config.CDN_BASE_URL
+      minioBucketName: config.MINIO_BUCKET
     })
   }
 
@@ -91,7 +110,7 @@ class ImageWorker {
     const startTime = Date.now()
     
     logger.info('Processing image job', {
-      jobId: job.id,
+      jobId: String(job.id),
       printId,
       imageCount: Object.keys(imageUrls).length
     })
@@ -148,7 +167,7 @@ class ImageWorker {
             // Update CardImage with processed URLs
             cardImage.status = ImageStatus.COMPLETED
             cardImage.storageUrls = result.urls as any
-            cardImage.blurhash = result.blurhash
+            cardImage.blurhash = result.blurhash || null
             cardImage.processedAt = new Date()
             cardImage.cdnUrls = this.generateCDNUrls(result.urls || {}, storage)
             
@@ -156,12 +175,12 @@ class ImageWorker {
             
             // Update Print entity with main image URLs for quick access
             if (imageType === 'normal') {
-              print.imageNormal = result.urls?.normal
-              print.imageSmall = result.urls?.small
-              print.imageLarge = result.urls?.large
-              print.blurhash = result.blurhash
+              print.imageNormal = result.urls?.normal || null
+              print.imageSmall = result.urls?.small || null
+              print.imageLarge = result.urls?.large || null
+              print.blurhash = result.blurhash || null
             } else if (imageType === 'artCrop') {
-              print.imageArtCrop = result.urls?.normal
+              print.imageArtCrop = result.urls?.normal || null
             }
             
             processedImages.push({
@@ -179,7 +198,7 @@ class ImageWorker {
           } else {
             // Mark as failed
             cardImage.status = ImageStatus.FAILED
-            cardImage.errorMessage = result.error
+            cardImage.errorMessage = result.error || null
             await cardImageRepo.save(cardImage)
             
             processedImages.push({
@@ -224,7 +243,7 @@ class ImageWorker {
       this.failedCount += failedCount
       
       logger.info('Image job completed', {
-        jobId: job.id,
+        jobId: String(job.id),
         printId,
         successCount,
         failedCount,
@@ -242,7 +261,7 @@ class ImageWorker {
       
     } catch (error) {
       logger.error('Image job failed', error as Error, {
-        jobId: job.id,
+        jobId: String(job.id),
         printId
       })
       
@@ -284,7 +303,7 @@ class ImageWorker {
   private setupEventHandlers(): void {
     this.queue.on('completed', (job, result) => {
       logger.debug('Job completed', {
-        jobId: job.id,
+        jobId: String(job.id),
         printId: result.printId,
         success: result.success
       })
@@ -292,7 +311,7 @@ class ImageWorker {
     
     this.queue.on('failed', (job, error) => {
       logger.error('Job failed', error, {
-        jobId: job.id,
+        jobId: String(job.id),
         printId: job.data?.printId,
         attempts: job.attemptsMade
       })
@@ -300,7 +319,7 @@ class ImageWorker {
     
     this.queue.on('stalled', (job) => {
       logger.warn('Job stalled', {
-        jobId: job.id,
+        jobId: String(job.id),
         printId: job.data?.printId
       })
     })

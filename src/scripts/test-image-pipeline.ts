@@ -98,7 +98,7 @@ class ImagePipelineTest {
       
       const result = await etlService.startETLJob(
         'MTG',
-        ETLJobType.INCREMENTAL_UPDATE,
+        ETLJobType.INCREMENTAL_SYNC,
         'test',
         5 // Import only 5 cards for testing
       )
