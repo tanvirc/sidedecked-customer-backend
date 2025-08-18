@@ -28,7 +28,10 @@ interface ImageProcessingJobData {
     normal?: string
     large?: string
     artCrop?: string
+    borderCrop?: string
+    back?: string
   }
+  urlMapping?: Record<string, string[]> // Maps normalized URLs to image types
   priority?: number
 }
 
@@ -138,13 +141,20 @@ class ImageWorker {
   }
 
   private async processImageJob(job: Queue.Job<ImageProcessingJobData>): Promise<any> {
-    const { printId, imageUrls } = job.data
+    const { printId, imageUrls, urlMapping } = job.data
     const startTime = Date.now()
     
-    logger.info('Processing image job', {
+    // Calculate total image types (including duplicates that were deduplicated)
+    const totalImageTypes = urlMapping 
+      ? Object.values(urlMapping).reduce((sum, types) => sum + types.length, 0)
+      : Object.keys(imageUrls).length
+    
+    logger.info('Processing optimized image job', {
       jobId: String(job.id),
       printId,
-      imageCount: Object.keys(imageUrls).length
+      uniqueImageCount: Object.keys(imageUrls).length,
+      totalImageTypes,
+      deduplicationApplied: !!urlMapping
     })
     
     try {
@@ -157,111 +167,152 @@ class ImageWorker {
       }
       
       const processedImages: any[] = []
-      const storage = getStorageService()
+      const cardImageRepo = AppDataSource.getRepository(CardImage)
       
-      // Process each image type
-      for (const [imageType, imageUrl] of Object.entries(imageUrls)) {
+      // Process each unique image URL
+      for (const [primaryImageType, imageUrl] of Object.entries(imageUrls)) {
         if (!imageUrl) continue
         
         try {
-          // Check if image already processed
-          const cardImageRepo = AppDataSource.getRepository(CardImage)
-          let cardImage = await cardImageRepo.findOne({
-            where: { 
-              printId,
-              imageType: this.mapImageType(imageType)
-            }
+          // Normalize URL to find all image types this URL represents
+          const normalizedUrl = this.normalizeImageUrl(imageUrl)
+          const representedTypes = urlMapping?.[normalizedUrl] || [primaryImageType]
+          
+          logger.debug('Processing consolidated image', {
+            printId,
+            primaryImageType,
+            imageUrl: imageUrl.substring(imageUrl.lastIndexOf('/') + 1, imageUrl.lastIndexOf('/') + 20) + '...',
+            representedTypes
           })
           
-          // Create or update CardImage entity
-          if (!cardImage) {
-            cardImage = cardImageRepo.create({
-              printId,
-              imageType: this.mapImageType(imageType),
-              sourceUrl: imageUrl,
-              status: ImageStatus.PROCESSING
-            })
-          } else {
-            cardImage.status = ImageStatus.PROCESSING
-            cardImage.retryCount = (cardImage.retryCount || 0) + 1
-          }
-          
-          await cardImageRepo.save(cardImage)
-          
-          // Process the image
+          // Process the image once using consolidated storage paths
           const result = await this.imageService.processImageFromUrl(
             imageUrl,
             printId,
-            imageType
+            primaryImageType // Still pass the primary type for processing
           )
           
           if (result.success) {
-            // Update CardImage with processed URLs
-            cardImage.status = ImageStatus.COMPLETED
-            cardImage.storageUrls = result.urls as any
-            cardImage.blurhash = result.blurhash || null
-            cardImage.processedAt = new Date()
-            // Always set CDN URLs to null - transformation happens at API layer
-            cardImage.cdnUrls = null
-            
-            await cardImageRepo.save(cardImage)
-            
-            // Update Print entity with main image URLs for quick access
-            if (imageType === 'normal') {
-              print.imageNormal = result.urls?.normal || null
-              print.imageSmall = result.urls?.small || null
-              print.imageLarge = result.urls?.large || null
-              print.blurhash = result.blurhash || null
-            } else if (imageType === 'artCrop') {
-              print.imageArtCrop = result.urls?.normal || null
+            // Create CardImage entities for ALL image types this URL represents
+            for (const imageType of representedTypes) {
+              let cardImage = await cardImageRepo.findOne({
+                where: { 
+                  printId,
+                  imageType: this.mapImageType(imageType)
+                }
+              })
+              
+              // Create or update CardImage entity
+              if (!cardImage) {
+                cardImage = cardImageRepo.create({
+                  printId,
+                  imageType: this.mapImageType(imageType),
+                  sourceUrl: imageUrl,
+                  status: ImageStatus.COMPLETED
+                })
+              } else {
+                cardImage.status = ImageStatus.COMPLETED
+                cardImage.retryCount = (cardImage.retryCount || 0) + 1
+              }
+              
+              // All image types point to the SAME consolidated storage URLs
+              cardImage.storageUrls = result.urls as any
+              cardImage.blurhash = result.blurhash || null
+              cardImage.processedAt = new Date()
+              cardImage.cdnUrls = null // Set at API layer
+              
+              await cardImageRepo.save(cardImage)
+              
+              // Update Print entity with image URLs for quick access
+              if (imageType === 'normal') {
+                print.imageNormal = result.urls?.normal || null
+                print.imageSmall = result.urls?.small || null
+                print.imageLarge = result.urls?.large || null
+                print.blurhash = result.blurhash || null
+              } else if (imageType === 'artCrop') {
+                print.imageArtCrop = result.urls?.normal || null
+              }
+              
+              processedImages.push({
+                type: imageType,
+                success: true,
+                blurhash: result.blurhash,
+                urls: result.urls,
+                isSharedStorage: representedTypes.length > 1
+              })
             }
             
-            processedImages.push({
-              type: imageType,
-              success: true,
-              blurhash: result.blurhash,
-              urls: result.urls
+            logger.info('Consolidated image processed successfully', {
+              printId,
+              primaryImageType,
+              representedTypes,
+              blurhash: result.blurhash?.substring(0, 16) + '...',
+              storageShared: representedTypes.length > 1
             })
             
-            logger.debug('Image processed successfully', {
-              printId,
-              imageType,
-              blurhash: result.blurhash?.substring(0, 16) + '...'
-            })
           } else {
-            // Mark as failed
-            cardImage.status = ImageStatus.FAILED
-            cardImage.errorMessage = result.error || null
-            await cardImageRepo.save(cardImage)
+            // Mark all represented image types as failed
+            for (const imageType of representedTypes) {
+              let cardImage = await cardImageRepo.findOne({
+                where: { 
+                  printId,
+                  imageType: this.mapImageType(imageType)
+                }
+              })
+              
+              if (!cardImage) {
+                cardImage = cardImageRepo.create({
+                  printId,
+                  imageType: this.mapImageType(imageType),
+                  sourceUrl: imageUrl,
+                  status: ImageStatus.FAILED
+                })
+              } else {
+                cardImage.status = ImageStatus.FAILED
+                cardImage.retryCount = (cardImage.retryCount || 0) + 1
+              }
+              
+              cardImage.errorMessage = result.error || null
+              await cardImageRepo.save(cardImage)
+              
+              processedImages.push({
+                type: imageType,
+                success: false,
+                error: result.error
+              })
+            }
             
-            processedImages.push({
-              type: imageType,
-              success: false,
-              error: result.error
-            })
-            
-            logger.warn('Image processing failed', {
+            logger.warn('Consolidated image processing failed', {
               printId,
-              imageType,
+              primaryImageType,
+              representedTypes,
               error: result.error
             })
           }
           
-          // Update job progress
-          const progress = Math.round((processedImages.length / Object.keys(imageUrls).length) * 100)
+          // Update job progress based on unique images processed
+          const uniqueProcessed = Object.keys(imageUrls).indexOf(primaryImageType) + 1
+          const progress = Math.round((uniqueProcessed / Object.keys(imageUrls).length) * 100)
           await job.progress(progress)
           
         } catch (error) {
-          logger.error('Error processing image type', error as Error, {
+          logger.error('Error processing consolidated image', error as Error, {
             printId,
-            imageType
+            primaryImageType,
+            imageUrl: imageUrl.substring(0, 50) + '...'
           })
           
-          processedImages.push({
-            type: imageType,
-            success: false,
-            error: (error as Error).message
-          })
+          // Mark all represented types as failed
+          const normalizedUrl = this.normalizeImageUrl(imageUrl)
+          const representedTypes = urlMapping?.[normalizedUrl] || [primaryImageType]
+          
+          for (const imageType of representedTypes) {
+            processedImages.push({
+              type: imageType,
+              success: false,
+              error: (error as Error).message
+            })
+          }
         }
       }
       
@@ -275,12 +326,15 @@ class ImageWorker {
       this.processedCount += successCount
       this.failedCount += failedCount
       
-      logger.info('Image job completed', {
+      logger.info('Optimized image job completed', {
         jobId: String(job.id),
         printId,
+        uniqueImagesProcessed: Object.keys(imageUrls).length,
+        totalImageTypesHandled: successCount + failedCount,
         successCount,
         failedCount,
-        processingTime
+        processingTime,
+        efficiency: `${Math.round((totalImageTypes / Object.keys(imageUrls).length) * 100)}% deduplication`
       })
       
       return {
@@ -289,11 +343,16 @@ class ImageWorker {
         processedImages,
         totalProcessed: successCount,
         totalFailed: failedCount,
-        processingTime
+        processingTime,
+        optimizationStats: {
+          uniqueImagesProcessed: Object.keys(imageUrls).length,
+          totalImageTypes: totalImageTypes,
+          deduplicationRatio: Math.round((1 - Object.keys(imageUrls).length / totalImageTypes) * 100)
+        }
       }
       
     } catch (error) {
-      logger.error('Image job failed', error as Error, {
+      logger.error('Optimized image job failed', error as Error, {
         jobId: String(job.id),
         printId
       })
@@ -318,6 +377,18 @@ class ImageWorker {
         return ImageType.FULL
       default:
         return ImageType.MAIN
+    }
+  }
+
+  private normalizeImageUrl(url: string): string {
+    try {
+      const urlObj = new URL(url)
+      // Keep only protocol, host, port, and pathname for comparison
+      return `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`
+    } catch (error) {
+      // If URL parsing fails, return original URL
+      logger.warn('Failed to normalize image URL', { url })
+      return url
     }
   }
 

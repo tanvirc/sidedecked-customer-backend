@@ -836,31 +836,76 @@ export class ETLService {
   }
 
   /**
-   * Queue image processing for a print
+   * Queue image processing for a print with smart deduplication
    */
   private async queueImageProcessing(printId: string, images: any): Promise<void> {
     try {
       // Get the image processing queue
       const imageQueue = getImageQueue()
       
-      // Prepare image URLs for processing
+      // Prepare image URLs for processing with deduplication
       const imageUrls: Record<string, string> = {}
+      const uniqueUrls = new Set<string>()
+      const urlMapping: Record<string, string[]> = {} // Maps unique URL to image types
       
-      if (images.normal) imageUrls.normal = images.normal
-      if (images.large) imageUrls.large = images.large
-      if (images.small) imageUrls.small = images.small
-      if (images.artCrop) imageUrls.artCrop = images.artCrop
+      // Collect all potential image URLs
+      const potentialImages = {
+        normal: images.normal,
+        large: images.large,
+        small: images.small,
+        artCrop: images.artCrop,
+        borderCrop: images.borderCrop,
+        back: images.back
+      }
       
-      // Skip if no images to process
+      // Deduplicate by source URL
+      for (const [imageType, url] of Object.entries(potentialImages)) {
+        if (!url) continue
+        
+        // Normalize URL (remove query params, fragments for comparison)
+        const normalizedUrl = this.normalizeImageUrl(url)
+        
+        if (!uniqueUrls.has(normalizedUrl)) {
+          // First time seeing this URL - use it
+          uniqueUrls.add(normalizedUrl)
+          imageUrls[imageType] = url
+          urlMapping[normalizedUrl] = [imageType]
+        } else {
+          // URL already seen - just track the mapping for database updates
+          urlMapping[normalizedUrl].push(imageType)
+        }
+      }
+      
+      // Skip if no unique images to process
       if (Object.keys(imageUrls).length === 0) {
-        logger.debug('No images to process for print', { printId })
+        logger.debug('No unique images to process for print', { printId })
         return
       }
       
-      // Add job to queue with proper priority
+      // Log deduplication results
+      const originalCount = Object.values(potentialImages).filter(url => url).length
+      const uniqueCount = Object.keys(imageUrls).length
+      
+      if (originalCount > uniqueCount) {
+        logger.info('Image deduplication applied', {
+          printId,
+          originalImageCount: originalCount,
+          uniqueImageCount: uniqueCount,
+          duplicatesRemoved: originalCount - uniqueCount,
+          urlMappings: Object.fromEntries(
+            Object.entries(urlMapping).map(([url, types]) => [
+              url.substring(url.lastIndexOf('/') + 1, url.lastIndexOf('/') + 20) + '...', 
+              types
+            ])
+          )
+        })
+      }
+      
+      // Add job to queue with proper priority and mapping info
       const job = await imageQueue.add('process-images', {
         printId,
-        imageUrls,
+        imageUrls, // Only unique URLs
+        urlMapping, // Mapping of URLs to all image types they represent
         priority: 5 // Normal priority
       }, {
         attempts: 3,
@@ -872,15 +917,31 @@ export class ETLService {
         removeOnFail: 25
       })
       
-      logger.debug('Image processing job queued', {
+      logger.debug('Optimized image processing job queued', {
         printId,
         jobId: String(job.id),
-        imageCount: Object.keys(imageUrls).length
+        uniqueImageCount: Object.keys(imageUrls).length,
+        totalImageTypes: originalCount
       })
       
     } catch (error) {
       logger.error('Failed to queue image processing', error as Error, { printId })
       // Don't throw - image processing failure shouldn't stop ETL
+    }
+  }
+
+  /**
+   * Normalize image URL for comparison (remove query params, fragments)
+   */
+  private normalizeImageUrl(url: string): string {
+    try {
+      const urlObj = new URL(url)
+      // Keep only protocol, host, port, and pathname
+      return `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`
+    } catch (error) {
+      // If URL parsing fails, return original URL
+      logger.warn('Failed to normalize image URL', { url })
+      return url
     }
   }
 

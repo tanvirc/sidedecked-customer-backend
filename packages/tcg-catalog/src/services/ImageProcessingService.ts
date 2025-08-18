@@ -324,11 +324,13 @@ export class ImageProcessingService {
   }
 
   /**
-   * Generate MinIO object key for image
+   * Generate MinIO object key for image using consolidated path structure
    */
   private generateImageKey(printId: string, imageType: string, size: ImageSize, format: ImageFormat = 'webp'): string {
-    // Structure: cards/{printId}/{imageType}/{size}.{format}
-    return `cards/${printId}/${imageType}/${size}.${format}`
+    // NEW Structure: cards/{printId}/variants/{size}.{format}
+    // This consolidates all image types into a single set of size variants per print
+    // The imageType parameter is kept for backwards compatibility but not used in path
+    return `cards/${printId}/variants/${size}.${format}`
   }
 
   /**
