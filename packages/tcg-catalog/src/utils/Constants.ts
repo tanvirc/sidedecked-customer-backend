@@ -115,7 +115,7 @@ export const API_ENDPOINTS = {
     SETS: '/cardsets.php'
   },
   ONEPIECE_TCG: {
-    BASE_URL: 'https://onepiece-cardgame.dev/api',
+    BASE_URL: 'https://optcgapi.com/api',
     CARDS: '/cards',
     SETS: '/sets'
   }

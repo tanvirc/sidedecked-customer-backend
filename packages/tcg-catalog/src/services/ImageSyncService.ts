@@ -298,7 +298,7 @@ export class ImageSyncService {
       'scryfall.io',
       'pokemontcg.io',
       'ygoprodeck.com',
-      'onepiece-cardgame.dev'
+      'optcgapi.com'
     ]
 
     return externalDomains.some(domain => url.includes(domain))

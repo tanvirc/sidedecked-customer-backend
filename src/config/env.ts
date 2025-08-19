@@ -29,7 +29,7 @@ export const config = {
   POKEMON_TCG_API_URL: process.env.POKEMON_TCG_API_URL || 'https://api.pokemontcg.io/v2',
   POKEMON_TCG_API_KEY: process.env.POKEMON_TCG_API_KEY,
   YUGIOH_API_URL: process.env.YUGIOH_API_URL || 'https://db.ygoprodeck.com/api/v7',
-  ONEPIECE_API_URL: process.env.ONEPIECE_API_URL || 'https://onepiece-cardgame.dev/api',
+  ONEPIECE_API_URL: process.env.ONEPIECE_API_URL || 'https://optcgapi.com/api',
   
   // MinIO / S3
   MINIO_ENDPOINT: process.env.MINIO_ENDPOINT,

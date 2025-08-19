@@ -5,44 +5,42 @@ import { ETLJobType } from '../entities/ETLJob'
 import { UniversalCard, UniversalPrint } from '../types/ETLTypes'
 import { logger } from '../utils/Logger'
 import { generateNormalizedName } from '../utils/Helpers'
+import { config } from '../../../../src/config/env'
 
-interface OnePieceCard {
-  id: string
-  name: string
-  type: string
-  color?: string[]
-  cost?: string
-  power?: string
-  counter?: string
-  life?: string
-  attribute?: string
-  effect?: string
-  trigger?: string
-  rarity: string
-  set_id: string
+interface OPTCGCard {
+  inventory_price: number
+  market_price: number
+  card_name: string
   set_name: string
-  card_number: string
-  artist?: string
-  release_date?: string
-  image_url?: string
-  price_usd?: number
+  card_text: string
+  set_id: string
+  rarity: string
+  card_set_id: string
+  card_color: string
+  card_type: string
+  life?: string
+  card_cost: string
+  card_power: string
+  sub_types?: string
+  counter_amount: number
+  attribute?: string
+  date_scraped: string
+  card_image_id: string
+  card_image: string
 }
 
-// Note: This is a placeholder interface as there's no official One Piece TCG API yet
-// We'll create a structure that can be adapted when an official API becomes available
-interface OnePieceResponse {
-  cards: OnePieceCard[]
-  total: number
-  page?: number
-  per_page?: number
+interface OPTCGSet {
+  set_name: string
+  set_id: string
 }
 
 export class OnePieceTransformer {
   private client: AxiosInstance
-  private readonly baseUrl = 'https://api.onepiece-cardgame.dev/v1' // Placeholder URL
-  private readonly rateLimit = 150 // milliseconds between requests
+  private readonly baseUrl: string
+  private readonly rateLimit = 200 // milliseconds between requests (be nice to free API)
 
   constructor() {
+    this.baseUrl = config.ONEPIECE_API_URL || 'https://optcgapi.com/api'
     this.client = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000,
@@ -62,45 +60,16 @@ export class OnePieceTransformer {
     logger.info('Starting One Piece TCG data fetch', { gameCode: game.code, jobType, limit })
 
     try {
-      // First try to fetch from real API
-      try {
-        logger.info('🔍 Attempting One Piece TCG API fetch')
-        const apiCards = await this.fetchCardsFromAPI(jobType, limit)
+      logger.info('🔍 Fetching One Piece TCG data from OPTCG API')
+      const apiCards = await this.fetchCardsFromAPI(jobType, limit)
+      
+      logger.info('✅ Successfully fetched from One Piece TCG API', {
+        gameCode: game.code,
+        totalCards: apiCards.length
+      })
+      
+      return this.transformToUniversal(apiCards)
         
-        logger.info('✅ Successfully fetched from One Piece TCG API', {
-          gameCode: game.code,
-          totalCards: apiCards.length
-        })
-        
-        return this.transformToUniversal(apiCards)
-        
-      } catch (apiError) {
-        logger.warn('One Piece TCG API not available, falling back to mock data', {
-          error: (apiError as Error).message
-        })
-        
-        // Fall back to mock data when API is unavailable
-        let mockCards = this.generateMockCards(jobType, limit)
-        
-        // Log the query being used
-        logger.apiCall('onepiece_tcg', 'mock_data_fallback', 'GET')
-        logger.info(`🔍 One Piece Query: mock data generation (fallback)${limit ? ` (limit: ${limit})` : ''}`)
-
-        // Apply limit if specified (for mock data)
-        if (limit && mockCards.length > limit) {
-          mockCards = mockCards.slice(0, limit)
-          logger.info(`✅ Trimmed mock data to limit of ${limit} cards`)
-        }
-
-        logger.info('Completed One Piece TCG data fetch using mock data', {
-          gameCode: game.code,
-          totalCards: mockCards.length,
-          note: 'Using mock data - real API unavailable'
-        })
-
-        return this.transformToUniversal(mockCards)
-      }
-
     } catch (error) {
       logger.error('Failed to fetch One Piece TCG data', error as Error, {
         gameCode: game.code,
@@ -110,211 +79,111 @@ export class OnePieceTransformer {
     }
   }
 
-  private generateMockCards(jobType: ETLJobType, limit?: number): OnePieceCard[] {
-    // Generate some mock One Piece cards for testing
-    // This should be replaced with actual API calls when available
-    const mockCards: OnePieceCard[] = [
-      {
-        id: 'OP01-001',
-        name: 'Monkey D. Luffy',
-        type: 'Leader',
-        color: ['Red'],
-        cost: '0',
-        power: '5000',
-        life: '5',
-        attribute: 'Straw Hat Crew',
-        effect: '[Activate: Main] DON!! -1 (You may return the specified number of DON!! cards from your field to your DON!! deck.): Up to 1 of your Leader or Character cards gains +1000 power during this turn.',
-        rarity: 'Leader',
-        set_id: 'OP01',
-        set_name: 'Romance Dawn',
-        card_number: '001',
-        artist: 'Eiichiro Oda',
-        release_date: '2022-07-08',
-        image_url: 'https://onepiece-cardgame.com/images/cardlist/card/OP01-001.png',
-        price_usd: 25.00
-      },
-      {
-        id: 'OP01-025',
-        name: 'Roronoa Zoro',
-        type: 'Character',
-        color: ['Green'],
-        cost: '4',
-        power: '5000',
-        counter: '1000',
-        attribute: 'Straw Hat Crew',
-        effect: '[DON!! x1] [When Attacking] K.O. up to 1 of your opponent\'s Characters with a cost of 3 or less.',
-        rarity: 'Super Rare',
-        set_id: 'OP01',
-        set_name: 'Romance Dawn',
-        card_number: '025',
-        artist: 'Eiichiro Oda',
-        release_date: '2022-07-08',
-        image_url: 'https://onepiece-cardgame.com/images/cardlist/card/OP01-025.png',
-        price_usd: 8.50
-      },
-      {
-        id: 'OP01-067',
-        name: 'Gum-Gum Pistol',
-        type: 'Event',
-        color: ['Red'],
-        cost: '2',
-        trigger: 'Draw 1 card.',
-        effect: '[Counter] Up to 1 of your Leader or Character cards gains +2000 power during this battle.',
-        rarity: 'Common',
-        set_id: 'OP01',
-        set_name: 'Romance Dawn',
-        card_number: '067',
-        release_date: '2022-07-08',
-        image_url: 'https://onepiece-cardgame.com/images/cardlist/card/OP01-067.png',
-        price_usd: 0.25
-      }
-    ]
 
-    let resultCards: OnePieceCard[]
+  private async fetchCardsFromAPI(jobType: ETLJobType, limit?: number): Promise<OPTCGCard[]> {
+    let allCards: OPTCGCard[] = []
 
-    // Filter based on job type
-    switch (jobType) {
-      case 'full':
-        resultCards = mockCards
-        break
-      case 'incremental':
-        // Return only recent cards (mock: last card)
-        resultCards = mockCards.slice(-1)
-        break
-      case 'sets':
-        // Return cards from specific set
-        resultCards = mockCards.filter(card => card.set_id === 'OP01')
-        break
-      default:
-        resultCards = mockCards
-        break
-    }
+    try {
+      // Get available sets first
+      const setsResponse = await this.client.get<OPTCGSet[]>('/allSets/')
+      const sets = setsResponse.data
+      
+      logger.debug('Fetching One Piece TCG data', {
+        jobType,
+        availableSets: sets.length,
+        limit
+      })
+      
+      const setsToProcess = this.getSetsToProcess(sets, jobType)
 
-    // Apply limit if specified
-    if (limit && resultCards.length > limit) {
-      resultCards = resultCards.slice(0, limit)
-    }
+      // Fetch cards from each set
+      for (const set of setsToProcess) {
+        try {
+          logger.debug(`Fetching cards from set ${set.set_id}`, { setName: set.set_name })
+          const setCards = await this.getCardsFromSet(set.set_id)
+          
+          allCards.push(...setCards)
+          
+          logger.debug(`Fetched ${setCards.length} cards from ${set.set_id}`, {
+            totalCardsSoFar: allCards.length
+          })
 
-    return resultCards
-  }
-
-  private async fetchCardsFromAPI(jobType: ETLJobType, limit?: number): Promise<OnePieceCard[]> {
-    // This method will be implemented when an official API becomes available
-    let allCards: OnePieceCard[] = []
-    let page = 1
-    const perPage = limit ? Math.min(limit, 100) : 100
-
-    while (true) {
-      try {
-        logger.debug('Fetching One Piece TCG page', { page, perPage })
-        
-        const response = await this.client.get<OnePieceResponse>('/cards', {
-          params: {
-            page,
-            per_page: perPage,
-            ...this.buildQueryParams(jobType, limit)
+          // Check if we've reached the limit
+          if (limit && allCards.length >= limit) {
+            allCards = allCards.slice(0, limit)
+            logger.info(`✅ Reached limit of ${limit} cards, stopping fetch`)
+            break
           }
-        })
 
-        const data = response.data
-        allCards.push(...data.cards)
-
-        logger.debug('Fetched One Piece TCG page', {
-          cardsThisPage: data.cards.length,
-          totalCardsSoFar: allCards.length,
-          page
-        })
-
-        // Check if we've reached the limit
-        if (limit && allCards.length >= limit) {
-          allCards = allCards.slice(0, limit) // Trim to exact limit
-          logger.info(`✅ Reached limit of ${limit} cards, stopping fetch`)
-          break
+        } catch (error) {
+          logger.warn(`Failed to fetch cards from set ${set.set_id}`, { error })
         }
-
-        if (data.cards.length < perPage) {
-          break
-        }
-
-        page++
-
-        // Safety check
-        if (allCards.length > 10000) {
-          logger.warn('Reached maximum card limit, stopping fetch', { totalCards: allCards.length })
-          break
-        }
-
-      } catch (error) {
-        logger.error('Error fetching One Piece cards from API', error as Error, { page })
-        // For the first page failure, throw the error to trigger fallback
-        if (page === 1) {
-          throw error
-        }
-        // For subsequent pages, just break and return what we have
-        break
       }
-    }
 
-    return allCards
+      logger.info('Completed One Piece TCG data fetch', {
+        totalCards: allCards.length,
+        jobType
+      })
+
+      return allCards
+
+    } catch (error) {
+      logger.error('Error fetching One Piece cards from OPTCG API', error as Error)
+      throw error
+    }
   }
 
-  private buildQueryParams(jobType: ETLJobType, limit?: number): Record<string, any> {
-    const params: Record<string, any> = {}
-
-    // For small limits, we can use more specific filters to reduce API response size
-    if (limit && limit <= 100) {
-      // For small limits, fetch only character cards (most common type)
-      params.type = 'Character'
-      return params
-    }
-
+  private getSetsToProcess(sets: OPTCGSet[], jobType: ETLJobType): OPTCGSet[] {
     switch (jobType) {
       case ETLJobType.FULL:
       case ETLJobType.FULL_SYNC:
-        // No additional filters
-        break
+        // Fetch cards from all sets
+        return sets
+      
       case ETLJobType.INCREMENTAL:
       case ETLJobType.INCREMENTAL_SYNC:
-        // For testing with limits, use broader query. For production, use date-based filtering
-        if (limit && limit <= 1000) {
-          // Use more specific filter for testing
-          params.type = 'Character'
-        } else {
-          // Fetch cards from last 30 days
-          const thirtyDaysAgo = new Date()
-          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-          params.since = thirtyDaysAgo.toISOString().split('T')[0]
-        }
-        break
-      case ETLJobType.SETS:
-        // Fetch only from latest set
-        params.latest_set = true
-        break
-      case ETLJobType.BANLIST_UPDATE:
-        // For banlist updates, get all cards (mock API limitation)
-        break
-      default:
-        // Default to latest set, but use character filter for small limits
-        if (limit && limit <= 100) {
-          params.type = 'Character'
-        } else {
-          params.latest_set = true
-        }
-        break
-    }
+        // Fetch cards from the latest 2 sets
+        return sets.slice(-2)
 
-    return params
+      case ETLJobType.SETS:
+        // Fetch cards from latest set only
+        return sets.length > 0 ? [sets[sets.length - 1]] : []
+
+      case ETLJobType.BANLIST_UPDATE:
+        // For banlist updates, fetch from recent sets for format legality updates
+        return sets.slice(-3)
+
+      default:
+        // Default to latest set
+        return sets.length > 0 ? [sets[sets.length - 1]] : []
+    }
   }
 
-  private transformToUniversal(onePieceCards: OnePieceCard[]): UniversalCard[] {
+  private async getCardsFromSet(setId: string): Promise<OPTCGCard[]> {
+    try {
+      const response = await this.client.get<OPTCGCard[]>(`/sets/${setId}/`)
+      return response.data
+    } catch (error) {
+      logger.warn(`Failed to fetch cards from set ${setId}`, { error })
+      return []
+    }
+  }
+
+
+  private transformToUniversal(onePieceCards: OPTCGCard[]): UniversalCard[] {
     // Use a fixed namespace UUID for One Piece cards to ensure consistent generation
     const ONEPIECE_NAMESPACE = '6ba7b816-9dad-11d1-80b4-00c04fd430c8' // Using modified DNS namespace UUID
     
     // Group cards by name to handle multiple prints
-    const cardMap = new Map<string, OnePieceCard[]>()
+    const cardMap = new Map<string, OPTCGCard[]>()
     
     for (const card of onePieceCards) {
-      const normalizedName = generateNormalizedName(card.name)
+      if (!card.card_name) {
+        logger.warn('Skipping card with no card_name', { card })
+        continue
+      }
+      
+      const normalizedName = generateNormalizedName(card.card_name)
       const existing = cardMap.get(normalizedName) || []
       existing.push(card)
       cardMap.set(normalizedName, existing)
@@ -326,26 +195,26 @@ export class OnePieceTransformer {
       const canonicalCard = prints[0]
       
       // Generate a deterministic UUID based on card name and type
-      const oracleId = uuidv5(`onepiece_${normalizedName}_${canonicalCard.type.toLowerCase()}`, ONEPIECE_NAMESPACE)
+      const oracleId = uuidv5(`onepiece_${normalizedName}_${canonicalCard.card_type.toLowerCase()}`, ONEPIECE_NAMESPACE)
       
       const universalCard: UniversalCard = {
         oracleId,
         oracleHash: '', // Will be generated by ETLService
-        name: canonicalCard.name,
+        name: canonicalCard.card_name,
         normalizedName,
-        primaryType: this.mapCardType(canonicalCard.type),
+        primaryType: this.mapCardType(canonicalCard.card_type),
         subtypes: this.extractSubtypes(canonicalCard),
         supertypes: [],
-        oracleText: canonicalCard.effect,
+        oracleText: canonicalCard.card_text,
         flavorText: undefined, // One Piece doesn't typically have flavor text
         keywords: this.extractKeywords(canonicalCard),
 
         // One Piece specific fields
-        cost: canonicalCard.cost ? parseInt(canonicalCard.cost, 10) : undefined,
+        cost: canonicalCard.card_cost && canonicalCard.card_cost !== 'NULL' ? parseInt(canonicalCard.card_cost, 10) : undefined,
         donCost: undefined, // Will be extracted from cost if needed
         lifeValue: canonicalCard.life ? parseInt(canonicalCard.life, 10) : undefined,
-        counterValue: canonicalCard.counter ? parseInt(canonicalCard.counter, 10) : undefined,
-        power: canonicalCard.power ? parseInt(canonicalCard.power, 10) : undefined,
+        counterValue: canonicalCard.counter_amount || undefined,
+        power: canonicalCard.card_power ? parseInt(canonicalCard.card_power, 10) : undefined,
 
         // MTG fields (null for One Piece)
         manaCost: undefined,
@@ -376,21 +245,21 @@ export class OnePieceTransformer {
     return universalCards
   }
 
-  private transformPrint(onePieceCard: OnePieceCard): UniversalPrint {
+  private transformPrint(onePieceCard: OPTCGCard): UniversalPrint {
     return {
       printHash: '', // Will be generated by ETLService
       setCode: onePieceCard.set_id,
       setName: onePieceCard.set_name,
-      collectorNumber: onePieceCard.card_number,
+      collectorNumber: onePieceCard.card_set_id.split('-')[1], // Extract number from card_set_id like OP01-001
       rarity: this.normalizeRarity(onePieceCard.rarity),
-      artist: onePieceCard.artist,
+      artist: undefined, // OPTCG API doesn't provide artist info
       flavorText: undefined,
       language: 'en',
       isFoilAvailable: this.hasFoilVariant(onePieceCard.rarity),
-      isAlternateArt: false,
+      isAlternateArt: this.isAlternateArt(onePieceCard),
       isPromo: this.isPromo(onePieceCard.rarity),
-      finish: 'normal',
-      variation: undefined,
+      finish: this.isAlternateArt(onePieceCard) ? 'foil' : 'normal',
+      variation: this.isAlternateArt(onePieceCard) ? 'parallel' : undefined,
       frame: 'normal',
       borderColor: 'black',
       
@@ -398,18 +267,18 @@ export class OnePieceTransformer {
       formatLegality: this.extractFormatLegality(onePieceCard),
       
       externalIds: {
-        pokemonTcg: onePieceCard.id // Temporary: will be fixed when official API available
+        pokemonTcg: onePieceCard.card_set_id // Using pokemonTcg field for now
       },
 
-      images: onePieceCard.image_url ? {
-        small: onePieceCard.image_url,
-        normal: onePieceCard.image_url,
-        large: onePieceCard.image_url
+      images: onePieceCard.card_image ? {
+        small: onePieceCard.card_image,
+        normal: onePieceCard.card_image,
+        large: onePieceCard.card_image
       } : undefined,
 
-      prices: onePieceCard.price_usd ? {
-        usd: onePieceCard.price_usd
-      } : undefined
+      prices: {
+        usd: onePieceCard.market_price || onePieceCard.inventory_price
+      }
     }
   }
 
@@ -424,37 +293,44 @@ export class OnePieceTransformer {
     return typeMap[onePieceType] || onePieceType
   }
 
-  private extractSubtypes(card: OnePieceCard): string[] {
+  private extractSubtypes(card: OPTCGCard): string[] {
     const subtypes: string[] = []
 
     if (card.attribute) {
       subtypes.push(card.attribute)
     }
 
-    if (card.color && card.color.length > 0) {
-      subtypes.push(...card.color)
+    if (card.card_color) {
+      subtypes.push(card.card_color)
+    }
+
+    if (card.sub_types) {
+      // Split sub_types by spaces or commas and add them
+      const parsedSubtypes = card.sub_types.split(/[\s,]+/).filter(Boolean)
+      subtypes.push(...parsedSubtypes)
     }
 
     return subtypes
   }
 
-  private extractKeywords(card: OnePieceCard): string[] {
+  private extractKeywords(card: OPTCGCard): string[] {
     const keywords: string[] = []
 
     if (card.attribute) {
       keywords.push(card.attribute)
     }
 
-    if (card.color && card.color.length > 0) {
-      keywords.push(...card.color)
+    if (card.card_color) {
+      keywords.push(card.card_color)
     }
 
-    if (card.trigger) {
-      keywords.push('Trigger')
+    if (card.card_type) {
+      keywords.push(card.card_type)
     }
 
-    if (card.type) {
-      keywords.push(card.type)
+    if (card.sub_types) {
+      const parsedSubtypes = card.sub_types.split(/[\s,]+/).filter(Boolean)
+      keywords.push(...parsedSubtypes)
     }
 
     return keywords
@@ -484,10 +360,15 @@ export class OnePieceTransformer {
     return rarity.includes('Promo') || rarity.includes('Prize')
   }
 
-  private extractFormatLegality(card: OnePieceCard): Record<string, string> | undefined {
+  private isAlternateArt(card: OPTCGCard): boolean {
+    return card.card_name.includes('(Parallel)') || card.card_image_id.includes('_p')
+  }
+
+  private extractFormatLegality(card: OPTCGCard): Record<string, string> | undefined {
     // Basic format legality for One Piece
-    // Since there's no official API yet, we assume all cards are legal in standard format
+    // All cards from official sets are legal in OP format
     return {
+      op: 'legal',
       standard: 'legal'
     }
   }
