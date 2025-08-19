@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { AppDataSource } from '../src/config/database';
+import { AppDataSource } from '../config/database';
 
 async function cleanCardData() {
   try {

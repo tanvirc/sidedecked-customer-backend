@@ -27,7 +27,7 @@ export class PriceAlert {
   @Column({ type: 'uuid' })
   user_id: string
 
-  @Column({ length: 200 })
+  @Column({ type: 'varchar', length: 200 })
   catalog_sku: string
 
   @Column({ 
@@ -51,40 +51,40 @@ export class PriceAlert {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   percentage_threshold?: number
 
-  @Column({ length: 10, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   condition_filter?: string
 
-  @Column({ length: 10, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   language_filter?: string
 
   // Alert metadata
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   baseline_price?: number
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   last_checked_at?: Date
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   last_triggered_at?: Date
 
   @Column({ type: 'integer', default: 0 })
   trigger_count: number
 
   // Notification preferences
-  @Column({ default: true })
+  @Column({ type: 'boolean', default: true })
   email_enabled: boolean
 
-  @Column({ default: false })
+  @Column({ type: 'boolean', default: false })
   sms_enabled: boolean
 
-  @Column({ default: false })
+  @Column({ type: 'boolean', default: false })
   push_enabled: boolean
 
   // Auto-management
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   expires_at?: Date
 
-  @Column({ default: false })
+  @Column({ type: 'boolean', default: false })
   auto_disable_after_trigger: boolean
 
   @Column({ type: 'integer', default: 1 })

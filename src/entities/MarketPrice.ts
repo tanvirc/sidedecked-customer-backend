@@ -45,7 +45,7 @@ export class MarketPrice {
   @Column({ type: 'varchar', length: 3, default: 'USD' })
   currency: string
 
-  @Column({ type: 'int', nullable: true })
+  @Column({ type: 'integer', nullable: true })
   stock_quantity?: number
 
   @Column({ type: 'text', nullable: true })
@@ -69,10 +69,10 @@ export class MarketPrice {
   @Column({ type: 'jsonb', nullable: true })
   additional_data?: Record<string, any> // Store source-specific metadata
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'integer', default: 0 })
   seller_rating?: number
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'integer', default: 0 })
   seller_feedback_count?: number
 
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })

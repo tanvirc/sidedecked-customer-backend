@@ -163,7 +163,12 @@ class ImageWorker {
       const print = await printRepo.findOne({ where: { id: printId } })
       
       if (!print) {
-        throw new Error(`Print not found: ${printId}`)
+        logger.warn('Print not found for image processing, skipping job', {
+          printId,
+          jobId: job.id?.toString()
+        })
+        // Return early - job completed but no work done (graceful skip)
+        return
       }
       
       const processedImages: any[] = []

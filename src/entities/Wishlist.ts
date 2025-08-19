@@ -11,17 +11,17 @@ export class Wishlist {
   @Column({ type: 'uuid' })
   user_id: string
 
-  @Column({ length: 255 })
+  @Column({ type: 'varchar', length: 255 })
   name: string
 
   @Column({ type: 'text', nullable: true })
   description?: string
 
   // Privacy settings
-  @Column({ default: false })
+  @Column({ type: 'boolean', default: false })
   is_public: boolean
 
-  @Column({ length: 100, unique: true, nullable: true })
+  @Column({ type: 'varchar', length: 100, unique: true, nullable: true })
   share_token?: string
 
   // Metadata
