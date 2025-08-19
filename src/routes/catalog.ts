@@ -662,42 +662,254 @@ router.get('/cards/suggestions', async (req, res) => {
 // Get search facets
 router.get('/search/facets', async (req, res) => {
   try {
-    // Mock facets for development
-    const facets = {
-      games: [
-        { value: 'MTG', label: 'Magic: The Gathering', count: 1250 },
-        { value: 'POKEMON', label: 'Pokémon', count: 987 },
-        { value: 'YUGIOH', label: 'Yu-Gi-Oh!', count: 654 },
-        { value: 'OPTCG', label: 'One Piece TCG', count: 432 }
-      ],
-      types: [
-        { value: 'creature', label: 'Creature', count: 245 },
-        { value: 'instant', label: 'Instant', count: 123 },
-        { value: 'sorcery', label: 'Sorcery', count: 98 },
-        { value: 'artifact', label: 'Artifact', count: 76 }
-      ],
-      rarities: [
-        { value: 'common', label: 'Common', count: 320 },
-        { value: 'uncommon', label: 'Uncommon', count: 165 },
-        { value: 'rare', label: 'Rare', count: 89 },
-        { value: 'mythic', label: 'Mythic Rare', count: 23 }
-      ],
-      sets: [
-        { value: 'foundations', label: 'Foundations', count: 78 },
-        { value: 'duskmourn', label: 'Duskmourn', count: 65 },
-        { value: 'bloomburrow', label: 'Bloomburrow', count: 54 }
-      ]
+    const {
+      q: query,
+      games,
+      types,
+      rarities,
+      sets,
+      colors,
+      energyTypes,
+      attributes,
+      formats,
+    } = req.query
+
+    console.log('DEBUG: Calculating facets with filters:', { query, games, types, rarities, sets })
+
+    const cardRepository = AppDataSource.getRepository(Card)
+    let baseQueryBuilder = cardRepository
+      .createQueryBuilder('card')
+      .leftJoin('card.game', 'game')
+      .leftJoin('card.prints', 'prints')
+      .leftJoin('prints.set', 'set')
+      .where('card.deletedAt IS NULL')
+
+    // Apply base filters for facet calculation (exclude the facet being calculated)
+    if (query) {
+      baseQueryBuilder.andWhere(
+        '(card.name ILIKE :query OR card.oracleText ILIKE :query OR card.flavorText ILIKE :query)',
+        { query: `%${query}%` }
+      )
     }
+
+    // Build facets with actual counts
+    const facets: any = {
+      games: [],
+      types: [],
+      rarities: [],
+      sets: [],
+      colors: [],
+      energyTypes: [],
+      attributes: []
+    }
+
+    // Calculate game facets (exclude games filter to show other games)
+    const gameQuery = baseQueryBuilder.clone()
+    // Don't apply games filter when calculating game facets
+    if (types) {
+      const typeArray = Array.isArray(types) ? types : [types]
+      gameQuery.andWhere('card.primaryType IN (:...types)', { types: typeArray })
+    }
+    if (rarities) {
+      const rarityArray = Array.isArray(rarities) ? rarities : [rarities]
+      gameQuery.andWhere('prints.rarity IN (:...rarities)', { rarities: rarityArray })
+    }
+    if (sets) {
+      const setArray = Array.isArray(sets) ? sets : [sets]
+      gameQuery.andWhere('set.code IN (:...sets)', { sets: setArray })
+    }
+
+    const gameResults = await gameQuery
+      .select('game.code', 'code')
+      .addSelect('game.name', 'name')
+      .addSelect('COUNT(DISTINCT card.id)', 'count')
+      .groupBy('game.code')
+      .addGroupBy('game.name')
+      .orderBy('count', 'DESC')
+      .getRawMany()
+
+    facets.games = gameResults.map(result => ({
+      value: result.code,
+      label: result.name,
+      count: parseInt(result.count)
+    }))
+
+    // Calculate type facets
+    const typeQuery = baseQueryBuilder.clone()
+    if (games) {
+      const gameArray = Array.isArray(games) ? games : [games]
+      typeQuery.andWhere('game.code IN (:...games)', { games: gameArray })
+    }
+    if (rarities) {
+      const rarityArray = Array.isArray(rarities) ? rarities : [rarities]
+      typeQuery.andWhere('prints.rarity IN (:...rarities)', { rarities: rarityArray })
+    }
+    if (sets) {
+      const setArray = Array.isArray(sets) ? sets : [sets]
+      typeQuery.andWhere('set.code IN (:...sets)', { sets: setArray })
+    }
+
+    const typeResults = await typeQuery
+      .select('card.primaryType', 'type')
+      .addSelect('COUNT(DISTINCT card.id)', 'count')
+      .andWhere('card.primaryType IS NOT NULL')
+      .groupBy('card.primaryType')
+      .orderBy('count', 'DESC')
+      .getRawMany()
+
+    facets.types = typeResults.map(result => ({
+      value: result.type.toLowerCase(),
+      label: result.type,
+      count: parseInt(result.count)
+    }))
+
+    // Calculate rarity facets
+    const rarityQuery = baseQueryBuilder.clone()
+    if (games) {
+      const gameArray = Array.isArray(games) ? games : [games]
+      rarityQuery.andWhere('game.code IN (:...games)', { games: gameArray })
+    }
+    if (types) {
+      const typeArray = Array.isArray(types) ? types : [types]
+      rarityQuery.andWhere('card.primaryType IN (:...types)', { types: typeArray })
+    }
+    if (sets) {
+      const setArray = Array.isArray(sets) ? sets : [sets]
+      rarityQuery.andWhere('set.code IN (:...sets)', { sets: setArray })
+    }
+
+    const rarityResults = await rarityQuery
+      .select('prints.rarity', 'rarity')
+      .addSelect('COUNT(DISTINCT card.id)', 'count')
+      .andWhere('prints.rarity IS NOT NULL')
+      .groupBy('prints.rarity')
+      .orderBy('count', 'DESC')
+      .getRawMany()
+
+    facets.rarities = rarityResults.map(result => ({
+      value: result.rarity.toLowerCase(),
+      label: result.rarity,
+      count: parseInt(result.count)
+    }))
+
+    // Calculate set facets (limit to top 20 for performance)
+    const setQuery = baseQueryBuilder.clone()
+    if (games) {
+      const gameArray = Array.isArray(games) ? games : [games]
+      setQuery.andWhere('game.code IN (:...games)', { games: gameArray })
+    }
+    if (types) {
+      const typeArray = Array.isArray(types) ? types : [types]
+      setQuery.andWhere('card.primaryType IN (:...types)', { types: typeArray })
+    }
+    if (rarities) {
+      const rarityArray = Array.isArray(rarities) ? rarities : [rarities]
+      setQuery.andWhere('prints.rarity IN (:...rarities)', { rarities: rarityArray })
+    }
+
+    const setResults = await setQuery
+      .select('set.code', 'code')
+      .addSelect('set.name', 'name')
+      .addSelect('COUNT(DISTINCT card.id)', 'count')
+      .andWhere('set.code IS NOT NULL')
+      .groupBy('set.code')
+      .addGroupBy('set.name')
+      .orderBy('count', 'DESC')
+      .limit(20)
+      .getRawMany()
+
+    facets.sets = setResults.map(result => ({
+      value: result.code,
+      label: result.name,
+      count: parseInt(result.count)
+    }))
+
+    // Calculate colors facets (MTG specific)
+    const colorQuery = baseQueryBuilder.clone()
+      .andWhere('game.code = :gameCode', { gameCode: 'MTG' })
+    
+    const gamesArray = games ? (Array.isArray(games) ? games : [games]) : []
+    if (gamesArray.length > 0 && !gamesArray.includes('MTG')) {
+      // If MTG is not in the games filter, don't show colors
+      facets.colors = []
+    } else {
+      if (types) {
+        const typeArray = Array.isArray(types) ? types : [types]
+        colorQuery.andWhere('card.primaryType IN (:...types)', { types: typeArray })
+      }
+      if (rarities) {
+        const rarityArray = Array.isArray(rarities) ? rarities : [rarities]
+        colorQuery.andWhere('prints.rarity IN (:...rarities)', { rarities: rarityArray })
+      }
+
+      // For colors, use raw SQL for JSON array handling
+      try {
+        const colorResults = await AppDataSource.query(`
+          SELECT 
+            color_value as color,
+            COUNT(DISTINCT card.id) as count
+          FROM (
+            SELECT 
+              card.id,
+              jsonb_array_elements_text(card.colors) as color_value
+            FROM card
+            LEFT JOIN game ON card.game_id = game.id
+            WHERE card.deleted_at IS NULL 
+              AND game.code = 'MTG'
+              AND card.colors IS NOT NULL
+              AND jsonb_array_length(card.colors) > 0
+          ) color_expanded
+          LEFT JOIN card ON card.id = color_expanded.id
+          LEFT JOIN game ON card.game_id = game.id
+          LEFT JOIN print prints ON prints.card_id = card.id
+          LEFT JOIN card_set "set" ON prints.set_id = "set".id
+          WHERE game.code = 'MTG'
+          ${types ? 'AND card.primary_type = ANY($1)' : ''}
+          ${rarities && types ? 'AND prints.rarity = ANY($2)' : rarities ? 'AND prints.rarity = ANY($1)' : ''}
+          GROUP BY color_value
+          ORDER BY count DESC
+        `, [
+          ...(types ? [Array.isArray(types) ? types : [types]] : []),
+          ...(rarities ? [Array.isArray(rarities) ? rarities : [rarities]] : [])
+        ])
+
+        const colorMap: Record<string, string> = {
+          'W': 'White',
+          'U': 'Blue', 
+          'B': 'Black',
+          'R': 'Red',
+          'G': 'Green'
+        }
+
+        facets.colors = colorResults.map((result: any) => ({
+          value: result.color,
+          label: colorMap[result.color] || result.color,
+          count: parseInt(result.count)
+        }))
+      } catch (colorError) {
+        console.error('Error calculating color facets:', colorError)
+        facets.colors = []
+      }
+    }
+
+    console.log('DEBUG: Calculated facets:', {
+      games: facets.games.length,
+      types: facets.types.length,
+      rarities: facets.rarities.length,
+      sets: facets.sets.length,
+      colors: facets.colors.length
+    })
 
     // Return just the facets object for frontend compatibility
     res.json(facets)
   } catch (error) {
-    console.error('Error fetching facets:', error)
+    console.error('Error calculating facets:', error)
+    console.error('Error stack:', (error as Error).stack)
     res.status(500).json({
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Failed to fetch facets',
+        message: 'Failed to calculate facets',
         timestamp: new Date().toISOString()
       }
     })
