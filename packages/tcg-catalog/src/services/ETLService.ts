@@ -11,7 +11,13 @@ import {
   ETLError, 
   UniversalCard, 
   CircuitBreakerState,
-  ImportCheckpoint
+  ImportCheckpoint,
+  CardImportResult,
+  BatchImportResult,
+  ImageProcessingStatus,
+  CardLevelCircuitBreakerState,
+  CircuitBreakerType,
+  CircuitBreakerConfig
 } from '../types/ETLTypes'
 import { logger, logTiming } from '../utils/Logger'
 import { generateOracleHash, generatePrintHash, formatSKU, chunkArray } from '../utils/Helpers'
@@ -27,6 +33,7 @@ import { ImageSyncService } from './ImageSyncService'
 
 export class ETLService {
   private circuitBreakers: Map<string, CircuitBreakerState> = new Map()
+  private cardLevelCircuitBreakers: Map<string, CardLevelCircuitBreakerState> = new Map()
   private config: ETLConfig
 
   constructor(config?: Partial<ETLConfig>) {
@@ -105,7 +112,14 @@ export class ETLService {
       imagesQueued: 0,
       skusGenerated: 0,
       duration: 0,
-      errors: []
+      errors: [],
+      // Enhanced card-level tracking
+      cardResults: [],
+      batchResults: [],
+      cardsSkipped: 0,
+      cardsRetried: 0,
+      imageProcessingCompleted: 0,
+      imageProcessingFailed: 0
     }
 
     // Track statistics for comprehensive summary
@@ -137,21 +151,44 @@ export class ETLService {
       // Process in batches
       const batches = chunkArray(cards, this.config.batchSize)
       
+      // Initialize enhanced tracking arrays
+      const allCardResults: CardImportResult[] = []
+      const allBatchResults: BatchImportResult[] = []
+      let totalImagesCompleted = 0
+      let totalImagesFailed = 0
+      let totalRetried = 0
+
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i]
         
         try {
           const batchResult = await this.processBatch(batch, game, jobId)
+          allBatchResults.push(batchResult)
+          allCardResults.push(...batchResult.cardResults)
           
-          // Aggregate results
-          result.cardsCreated += batchResult.cardsCreated
-          result.cardsUpdated += batchResult.cardsUpdated
-          result.printsCreated += batchResult.printsCreated
-          result.printsUpdated += batchResult.printsUpdated
-          result.skusGenerated += batchResult.skusGenerated
-          result.imagesQueued += batchResult.imagesQueued
-          cardsSkipped += batchResult.cardsSkipped || 0
-          setsCreated += batchResult.setsCreated || 0
+          // Aggregate results from the new batch system
+          result.cardsCreated += batchResult.cardResults.filter(r => r.success && !r.isUpdate).length
+          result.cardsUpdated += batchResult.cardResults.filter(r => r.success && r.isUpdate).length
+          result.printsCreated += batchResult.cardResults.reduce((sum, r) => sum + r.printsCreated, 0)
+          result.printsUpdated += batchResult.cardResults.reduce((sum, r) => sum + r.printsUpdated, 0)
+          result.skusGenerated += batchResult.cardResults.reduce((sum, r) => sum + r.skusGenerated, 0)
+          result.imagesQueued += batchResult.cardResults.reduce((sum, r) => sum + r.imagesQueued, 0)
+          cardsSkipped += batchResult.skippedCards
+          
+          // Add batch errors to main error list
+          result.errors.push(...batchResult.errors)
+          
+          // Track image processing status
+          totalImagesCompleted += batchResult.cardResults.filter(r => 
+            r.imageProcessingStatus === ImageProcessingStatus.COMPLETED || 
+            r.imageProcessingStatus === ImageProcessingStatus.QUEUED
+          ).length
+          totalImagesFailed += batchResult.cardResults.filter(r => 
+            r.imageProcessingStatus === ImageProcessingStatus.FAILED
+          ).length
+          
+          // Track retries
+          totalRetried += batchResult.cardResults.filter(r => r.retryCount > 0).length
           
           // Update progress
           const processed = (i + 1) * this.config.batchSize
@@ -159,7 +196,21 @@ export class ETLService {
           
           logger.etlProgress(jobId, processed, cards.length)
           
-          // Rate limiting
+          // Log batch summary with retry information
+          const batchRetriedCards = batchResult.cardResults.filter(r => r.retryCount > 0).length
+          const batchMaxRetries = Math.max(0, ...batchResult.cardResults.map(r => r.retryCount))
+          
+          logger.info(`Batch ${i + 1}/${batches.length} completed`, {
+            jobId,
+            successful: batchResult.successfulCards,
+            failed: batchResult.failedCards,
+            skipped: batchResult.skippedCards,
+            retried: batchRetriedCards,
+            maxRetryCount: batchMaxRetries,
+            processingTime: batchResult.batchProcessingTimeMs
+          })
+          
+          // Rate limiting between batches
           if (this.config.rateLimitDelay > 0) {
             await this.sleep(this.config.rateLimitDelay)
           }
@@ -177,6 +228,14 @@ export class ETLService {
           logger.error('ETL batch failed', error as Error, { jobId, batch: i + 1 })
         }
       }
+
+      // Set enhanced tracking results
+      result.cardResults = allCardResults
+      result.batchResults = allBatchResults
+      result.cardsSkipped = cardsSkipped
+      result.cardsRetried = totalRetried
+      result.imageProcessingCompleted = totalImagesCompleted
+      result.imageProcessingFailed = totalImagesFailed
       
       result.duration = Date.now() - startTime
       result.success = result.errors.length === 0
@@ -292,9 +351,409 @@ export class ETLService {
   }
 
   /**
-   * Process a batch of cards with transaction handling
+   * Process a single card atomically with its own transaction
    */
-  private async processBatch(cards: UniversalCard[], game: Game, jobId?: string): Promise<{
+  private async processCardAtomically(
+    cardData: UniversalCard, 
+    game: Game, 
+    jobId?: string
+  ): Promise<CardImportResult> {
+    const startTime = Date.now()
+    const result: CardImportResult = {
+      cardName: cardData.name,
+      oracleId: cardData.oracleId,
+      oracleHash: cardData.oracleHash || 'pending',
+      success: false,
+      isUpdate: false,
+      printsProcessed: cardData.prints.length,
+      printsCreated: 0,
+      printsUpdated: 0,
+      skusGenerated: 0,
+      imagesQueued: 0,
+      imageProcessingStatus: ImageProcessingStatus.PENDING,
+      retryCount: 0,
+      processingTimeMs: 0,
+      timestamp: new Date()
+    }
+
+    try {
+      // Check card-level circuit breakers before processing
+      if (this.isCardLevelCircuitBreakerOpen(game.code, CircuitBreakerType.DATABASE)) {
+        result.success = false
+        result.error = {
+          type: 'database_error',
+          message: 'Card processing skipped due to database circuit breaker',
+          timestamp: new Date(),
+          retryable: false
+        }
+        result.processingTimeMs = Date.now() - startTime
+        logger.warn('Card processing skipped due to database circuit breaker', {
+          cardName: cardData.name,
+          gameCode: game.code
+        })
+        return result
+      }
+
+      // Generate hashes for deduplication
+      cardData.oracleHash = generateOracleHash({
+        name: cardData.name,
+        type: cardData.primaryType,
+        text: cardData.oracleText,
+        gameSpecific: this.extractGameSpecificData(cardData)
+      })
+      result.oracleHash = cardData.oracleHash
+
+      // Check if card already exists to determine if we'll skip or update
+      const existingCard = await AppDataSource.getRepository(Card).findOne({
+        where: { oracleHash: cardData.oracleHash }
+      })
+
+      if (existingCard && !this.config.forceUpdate) {
+        // Skip duplicate card
+        logger.cardSkipped(cardData.name, 'duplicate_oracle_hash', cardData.oracleHash, game.code, jobId)
+        result.success = true // Mark as success but skipped
+        result.processingTimeMs = Date.now() - startTime
+        // Record success for circuit breaker
+        this.recordCardLevelCircuitBreakerSuccess(game.code, CircuitBreakerType.DATABASE)
+        return result
+      }
+
+      result.isUpdate = !!existingCard
+
+      // Process this card in its own transaction
+      const imageJobsToQueue: Array<{ printId: string, images: any, cardName: string }> = []
+      
+      await AppDataSource.transaction(async (manager) => {
+        logger.cardProcessing(cardData.name, game.code, 'processing', jobId)
+
+        // Upsert card
+        const card = await this.upsertCard(cardData, game, manager)
+        result.isUpdate = !card.isNew
+
+        // Process prints
+        
+        for (const printData of cardData.prints) {
+          printData.printHash = generatePrintHash({
+            oracleHash: cardData.oracleHash!,
+            setCode: printData.setCode,
+            collectorNumber: printData.collectorNumber,
+            artist: printData.artist
+          })
+
+          const print = await this.upsertPrint(printData, card.id, manager)
+          if (print.isNew) {
+            result.printsCreated++
+          } else {
+            result.printsUpdated++
+          }
+
+          // Generate SKUs
+          const skus = await this.generateSKUsForPrint(print, manager, game.code, printData.setCode, printData.collectorNumber)
+          result.skusGenerated += skus.length
+
+          // Mark print as having images queued if images are available
+          if (!this.config.skipImages && printData.images) {
+            await manager.update(Print, { id: print.id }, {
+              imageProcessingStatus: ImageProcessingStatus.QUEUED
+            })
+
+            imageJobsToQueue.push({
+              printId: print.id,
+              images: printData.images,
+              cardName: cardData.name
+            })
+          }
+        }
+      })
+
+      // Transaction completed successfully - now queue images OUTSIDE transaction
+      if (imageJobsToQueue.length > 0) {
+        try {
+          for (const imageJob of imageJobsToQueue) {
+            await this.queueImageProcessing(imageJob.printId, imageJob.images)
+            result.imagesQueued++
+          }
+          result.imageProcessingStatus = ImageProcessingStatus.QUEUED
+        } catch (error) {
+          // If image queuing fails, update print status but don't rollback transaction
+          logger.error('Failed to queue images after successful card transaction', error as Error, {
+            cardName: cardData.name,
+            gameCode: game.code,
+            imageJobsCount: imageJobsToQueue.length
+          })
+          
+          // Update print status to failed in a separate transaction
+          try {
+            await AppDataSource.transaction(async (errorManager) => {
+              for (const imageJob of imageJobsToQueue) {
+                await errorManager.update(Print, { id: imageJob.printId }, {
+                  imageProcessingStatus: ImageProcessingStatus.FAILED,
+                  imageProcessingError: (error as Error).message
+                })
+              }
+            })
+          } catch (updateError) {
+            logger.error('Failed to update print status after image queue failure', updateError as Error)
+          }
+
+          result.imageProcessingStatus = ImageProcessingStatus.FAILED
+          result.error = {
+            type: 'image_error',
+            message: `Failed to queue images: ${(error as Error).message}`,
+            timestamp: new Date(),
+            retryable: true
+          }
+          
+          // Record image processing failure for circuit breaker
+          this.recordCardLevelCircuitBreakerFailure(game.code, CircuitBreakerType.IMAGE_PROCESSING, error as Error)
+        }
+      }
+
+      result.success = true
+      result.processingTimeMs = Date.now() - startTime
+      
+      // Record success for circuit breakers
+      this.recordCardLevelCircuitBreakerSuccess(game.code, CircuitBreakerType.DATABASE)
+      if (result.imagesQueued > 0) {
+        this.recordCardLevelCircuitBreakerSuccess(game.code, CircuitBreakerType.IMAGE_PROCESSING)
+      }
+      
+      // Log successful import
+      logger.cardImported(
+        cardData.name,
+        game.code,
+        result.printsCreated,
+        result.skusGenerated,
+        result.isUpdate,
+        jobId
+      )
+
+      return result
+      
+    } catch (error) {
+      result.success = false
+      result.processingTimeMs = Date.now() - startTime
+      result.error = {
+        type: 'database_error',
+        message: (error as Error).message,
+        timestamp: new Date(),
+        retryable: true
+      }
+      
+      // Record failure for circuit breakers
+      this.recordCardLevelCircuitBreakerFailure(game.code, CircuitBreakerType.DATABASE, error as Error)
+      
+      logger.cardProcessing(cardData.name, game.code, 'failed', jobId)
+      logger.error('Failed to process card atomically', error as Error, { 
+        cardName: cardData.name,
+        gameCode: game.code
+      })
+
+      return result
+    }
+  }
+
+  /**
+   * Retry a failed card with exponential backoff
+   */
+  private async retryCardImport(
+    cardData: UniversalCard,
+    game: Game,
+    previousResult: CardImportResult,
+    jobId?: string
+  ): Promise<CardImportResult> {
+    const maxRetries = this.config.maxRetries || 3
+    const retryCount = previousResult.retryCount + 1
+    
+    if (retryCount > maxRetries) {
+      logger.warn(`Card retry limit exceeded`, {
+        cardName: cardData.name,
+        retryCount,
+        maxRetries,
+        gameCode: game.code
+      })
+      return {
+        ...previousResult,
+        retryCount,
+        processingTimeMs: 0,
+        timestamp: new Date()
+      }
+    }
+
+    // Exponential backoff delay
+    const baseDelay = 1000 // 1 second
+    const delay = baseDelay * Math.pow(2, retryCount - 1)
+    
+    logger.info(`Retrying card import with backoff`, {
+      cardName: cardData.name,
+      retryCount,
+      delayMs: delay,
+      gameCode: game.code
+    })
+
+    await this.sleep(delay)
+
+    try {
+      const retryResult = await this.processCardAtomically(cardData, game, jobId)
+      retryResult.retryCount = retryCount
+      
+      if (retryResult.success) {
+        logger.info(`Card retry successful`, {
+          cardName: cardData.name,
+          retryCount,
+          gameCode: game.code
+        })
+      } else {
+        logger.warn(`Card retry failed`, {
+          cardName: cardData.name,
+          retryCount,
+          error: retryResult.error?.message,
+          gameCode: game.code
+        })
+      }
+
+      return retryResult
+    } catch (error) {
+      logger.error(`Card retry encountered unexpected error`, error as Error, {
+        cardName: cardData.name,
+        retryCount,
+        gameCode: game.code
+      })
+
+      return {
+        ...previousResult,
+        retryCount,
+        error: {
+          type: 'database_error',
+          message: `Retry ${retryCount} failed: ${(error as Error).message}`,
+          timestamp: new Date(),
+          retryable: retryCount < maxRetries
+        },
+        processingTimeMs: 0,
+        timestamp: new Date()
+      }
+    }
+  }
+
+  /**
+   * Process cards with retry logic for failed imports
+   */
+  private async processCardsWithRetry(
+    cards: UniversalCard[],
+    game: Game,
+    jobId?: string
+  ): Promise<CardImportResult[]> {
+    const cardResults: CardImportResult[] = []
+    const failedCards: Array<{ card: UniversalCard; result: CardImportResult }> = []
+
+    // First pass: attempt all cards
+    for (const cardData of cards) {
+      try {
+        const result = await this.processCardAtomically(cardData, game, jobId)
+        cardResults.push(result)
+
+        if (!result.success && result.error?.retryable) {
+          failedCards.push({ card: cardData, result })
+        }
+      } catch (error) {
+        const errorResult: CardImportResult = {
+          cardName: cardData.name,
+          oracleId: cardData.oracleId,
+          oracleHash: cardData.oracleHash || '',
+          success: false,
+          isUpdate: false,
+          printsProcessed: cardData.prints.length,
+          printsCreated: 0,
+          printsUpdated: 0,
+          skusGenerated: 0,
+          imagesQueued: 0,
+          imageProcessingStatus: ImageProcessingStatus.PENDING,
+          error: {
+            type: 'database_error',
+            message: (error as Error).message,
+            timestamp: new Date(),
+            retryable: true
+          },
+          retryCount: 0,
+          processingTimeMs: 0,
+          timestamp: new Date()
+        }
+
+        cardResults.push(errorResult)
+        failedCards.push({ card: cardData, result: errorResult })
+      }
+    }
+
+    // Retry failed cards
+    if (failedCards.length > 0 && this.config.maxRetries > 0) {
+      logger.info(`Starting retry phase for ${failedCards.length} failed cards`, {
+        jobId,
+        gameCode: game.code
+      })
+
+      for (const { card, result } of failedCards) {
+        const retryResult = await this.retryCardImport(card, game, result, jobId)
+        
+        // Update the result in the main array
+        const originalIndex = cardResults.findIndex(r => 
+          r.cardName === card.name && r.oracleId === card.oracleId
+        )
+        if (originalIndex >= 0) {
+          cardResults[originalIndex] = retryResult
+        }
+      }
+    }
+
+    return cardResults
+  }
+
+  /**
+   * Process a batch of cards with individual card transactions
+   */
+  private async processBatch(cards: UniversalCard[], game: Game, jobId?: string): Promise<BatchImportResult> {
+    const batchStartTime = Date.now()
+    const createdSets = new Set<string>()
+
+    // Process cards with retry logic
+    const cardResults = await this.processCardsWithRetry(cards, game, jobId)
+
+    // Track set creation and extract errors
+    const errors: ETLError[] = []
+    for (let i = 0; i < cards.length; i++) {
+      const cardData = cards[i]
+      const cardResult = cardResults[i]
+
+      if (cardResult && cardResult.success) {
+        for (const printData of cardData.prints) {
+          createdSets.add(printData.setCode)
+        }
+      } else if (cardResult && cardResult.error) {
+        errors.push(cardResult.error)
+      }
+    }
+
+    // Calculate aggregated results
+    const successfulCards = cardResults.filter(r => r.success).length
+    const failedCards = cardResults.filter(r => !r.success).length
+    const skippedCards = cardResults.filter(r => r.success && r.printsCreated === 0 && r.printsUpdated === 0).length
+
+    const result: BatchImportResult = {
+      totalCards: cards.length,
+      successfulCards,
+      failedCards,
+      skippedCards,
+      cardResults,
+      batchProcessingTimeMs: Date.now() - batchStartTime,
+      errors
+    }
+
+    return result
+  }
+
+  /**
+   * Legacy batch processing method for compatibility
+   */
+  private async processBatchLegacy(cards: UniversalCard[], game: Game, jobId?: string): Promise<{
     cardsCreated: number
     cardsUpdated: number
     printsCreated: number
@@ -304,114 +763,19 @@ export class ETLService {
     cardsSkipped: number
     setsCreated: number
   }> {
-    const result = {
-      cardsCreated: 0,
-      cardsUpdated: 0,
-      printsCreated: 0,
-      printsUpdated: 0,
-      skusGenerated: 0,
-      imagesQueued: 0,
-      cardsSkipped: 0,
-      setsCreated: 0
+    const batchResult = await this.processBatch(cards, game, jobId)
+    
+    // Convert BatchImportResult to legacy format
+    return {
+      cardsCreated: batchResult.cardResults.filter(r => r.success && !r.isUpdate).length,
+      cardsUpdated: batchResult.cardResults.filter(r => r.success && r.isUpdate).length,
+      printsCreated: batchResult.cardResults.reduce((sum, r) => sum + r.printsCreated, 0),
+      printsUpdated: batchResult.cardResults.reduce((sum, r) => sum + r.printsUpdated, 0),
+      skusGenerated: batchResult.cardResults.reduce((sum, r) => sum + r.skusGenerated, 0),
+      imagesQueued: batchResult.cardResults.reduce((sum, r) => sum + r.imagesQueued, 0),
+      cardsSkipped: batchResult.skippedCards,
+      setsCreated: 0 // Will be calculated if needed
     }
-
-    const createdSets = new Set<string>() // Track unique sets created
-
-    return await AppDataSource.transaction(async (manager) => {
-      for (const cardData of cards) {
-        try {
-          // Log that we're processing this card
-          logger.cardProcessing(cardData.name, game.code, 'processing', jobId)
-          
-          // Generate hashes for deduplication
-          cardData.oracleHash = generateOracleHash({
-            name: cardData.name,
-            type: cardData.primaryType,
-            text: cardData.oracleText,
-            gameSpecific: this.extractGameSpecificData(cardData)
-          })
-
-          // Check if card already exists to determine if we'll skip or update
-          const existingCard = await manager.findOne(Card, {
-            where: { oracleHash: cardData.oracleHash }
-          })
-
-          if (existingCard && !this.config.forceUpdate) {
-            // Skip duplicate card
-            logger.cardSkipped(cardData.name, 'duplicate_oracle_hash', cardData.oracleHash, game.code, jobId)
-            result.cardsSkipped++
-            continue
-          }
-
-          // Upsert card
-          const card = await this.upsertCard(cardData, game, manager)
-          if (card.isNew) {
-            result.cardsCreated++
-          } else {
-            result.cardsUpdated++
-          }
-
-          // Process prints
-          let cardPrintsCreated = 0
-          let cardSkusCreated = 0
-          
-          for (const printData of cardData.prints) {
-            printData.printHash = generatePrintHash({
-              oracleHash: cardData.oracleHash,
-              setCode: printData.setCode,
-              collectorNumber: printData.collectorNumber,
-              artist: printData.artist
-            })
-
-            const print = await this.upsertPrint(printData, card.id, manager)
-            if (print.isNew) {
-              result.printsCreated++
-              cardPrintsCreated++
-              
-              // Track set creation
-              createdSets.add(printData.setCode)
-            } else {
-              result.printsUpdated++
-            }
-
-            // Generate SKUs
-            const skus = await this.generateSKUsForPrint(print, manager, game.code, printData.setCode, printData.collectorNumber)
-            result.skusGenerated += skus.length
-            cardSkusCreated += skus.length
-
-            // Queue image processing if not skipping images
-            if (!this.config.skipImages && printData.images) {
-              await this.queueImageProcessing(print.id, printData.images)
-              result.imagesQueued++
-            }
-          }
-
-          // Log successful card import
-          logger.cardImported(
-            cardData.name, 
-            game.code, 
-            cardPrintsCreated, 
-            cardSkusCreated, 
-            !card.isNew, 
-            jobId
-          )
-          
-        } catch (error) {
-          // Log failed card processing
-          logger.cardProcessing(cardData.name, game.code, 'failed', jobId)
-          logger.error('Failed to process card', error as Error, { 
-            cardName: cardData.name,
-            gameCode: game.code
-          })
-          throw error
-        }
-      }
-
-      // Set final counts
-      result.setsCreated = createdSets.size
-
-      return result
-    })
   }
 
   /**
@@ -640,7 +1004,190 @@ export class ETLService {
   }
 
   /**
-   * Circuit Breaker Implementation
+   * Card-Level Circuit Breaker Implementation
+   */
+  private getCardLevelCircuitBreakerKey(gameCode: string, type: CircuitBreakerType): string {
+    return `${gameCode}:${type}`
+  }
+
+  private getCardLevelCircuitBreakerConfig(type: CircuitBreakerType): CircuitBreakerConfig {
+    const configs: Record<CircuitBreakerType, CircuitBreakerConfig> = {
+      [CircuitBreakerType.GAME_LEVEL]: {
+        threshold: this.config.circuitBreakerThreshold,
+        resetTimeout: this.config.circuitBreakerResetTimeout,
+        maxHalfOpenAttempts: 3,
+        enabled: true
+      },
+      [CircuitBreakerType.DATABASE]: {
+        threshold: 5,
+        resetTimeout: 30000, // 30 seconds
+        maxHalfOpenAttempts: 2,
+        enabled: true
+      },
+      [CircuitBreakerType.API_RATE_LIMIT]: {
+        threshold: 3,
+        resetTimeout: 60000, // 1 minute
+        maxHalfOpenAttempts: 1,
+        enabled: true
+      },
+      [CircuitBreakerType.VALIDATION]: {
+        threshold: 10,
+        resetTimeout: 15000, // 15 seconds
+        maxHalfOpenAttempts: 2,
+        enabled: true
+      },
+      [CircuitBreakerType.IMAGE_PROCESSING]: {
+        threshold: 8,
+        resetTimeout: 45000, // 45 seconds
+        maxHalfOpenAttempts: 3,
+        enabled: true
+      },
+      [CircuitBreakerType.EXTERNAL_SERVICE]: {
+        threshold: 5,
+        resetTimeout: 60000, // 1 minute
+        maxHalfOpenAttempts: 2,
+        enabled: true
+      }
+    }
+    return configs[type]
+  }
+
+  private isCardLevelCircuitBreakerOpen(gameCode: string, type: CircuitBreakerType): boolean {
+    const key = this.getCardLevelCircuitBreakerKey(gameCode, type)
+    const state = this.cardLevelCircuitBreakers.get(key)
+    
+    if (!state) return false
+
+    const config = this.getCardLevelCircuitBreakerConfig(type)
+    if (!config.enabled) return false
+
+    if (state.isOpen) {
+      const now = Date.now()
+      const timeSinceLastFailure = now - (state.lastFailureTime?.getTime() || 0)
+      
+      if (timeSinceLastFailure > state.resetTimeout) {
+        // Move to half-open state
+        state.isOpen = false
+        state.halfOpenAttempts = 0
+        logger.info(`Circuit breaker moving to half-open`, {
+          gameCode,
+          type,
+          timeSinceLastFailure
+        })
+        return false
+      }
+      
+      return true
+    }
+
+    return false
+  }
+
+  private recordCardLevelCircuitBreakerSuccess(gameCode: string, type: CircuitBreakerType): void {
+    const key = this.getCardLevelCircuitBreakerKey(gameCode, type)
+    let state = this.cardLevelCircuitBreakers.get(key)
+    
+    if (!state) {
+      const config = this.getCardLevelCircuitBreakerConfig(type)
+      state = {
+        type,
+        gameCode,
+        isOpen: false,
+        failureCount: 0,
+        successCount: 0,
+        consecutiveFailures: 0,
+        resetTimeout: config.resetTimeout,
+        threshold: config.threshold,
+        halfOpenAttempts: 0,
+        maxHalfOpenAttempts: config.maxHalfOpenAttempts
+      }
+      this.cardLevelCircuitBreakers.set(key, state)
+    }
+
+    state.successCount++
+    state.lastSuccessTime = new Date()
+    state.consecutiveFailures = 0
+
+    // If we were in half-open state and got successful attempts, close the circuit
+    if (state.halfOpenAttempts > 0) {
+      state.halfOpenAttempts = 0
+      logger.info(`Circuit breaker closed after successful half-open attempts`, {
+        gameCode,
+        type,
+        successCount: state.successCount
+      })
+    }
+  }
+
+  private recordCardLevelCircuitBreakerFailure(gameCode: string, type: CircuitBreakerType, error: Error): void {
+    const key = this.getCardLevelCircuitBreakerKey(gameCode, type)
+    let state = this.cardLevelCircuitBreakers.get(key)
+    const config = this.getCardLevelCircuitBreakerConfig(type)
+    
+    if (!config.enabled) return
+
+    if (!state) {
+      state = {
+        type,
+        gameCode,
+        isOpen: false,
+        failureCount: 0,
+        successCount: 0,
+        consecutiveFailures: 0,
+        resetTimeout: config.resetTimeout,
+        threshold: config.threshold,
+        halfOpenAttempts: 0,
+        maxHalfOpenAttempts: config.maxHalfOpenAttempts
+      }
+      this.cardLevelCircuitBreakers.set(key, state)
+    }
+
+    state.failureCount++
+    state.consecutiveFailures++
+    state.lastFailureTime = new Date()
+
+    // If we were in half-open state and failed, reopen the circuit
+    if (state.halfOpenAttempts > 0) {
+      state.isOpen = true
+      state.halfOpenAttempts = 0
+      logger.warn(`Circuit breaker reopened after half-open failure`, {
+        gameCode,
+        type,
+        error: error.message,
+        consecutiveFailures: state.consecutiveFailures
+      })
+      return
+    }
+
+    // Check if we should open the circuit
+    if (state.consecutiveFailures >= state.threshold) {
+      state.isOpen = true
+      logger.error(`Circuit breaker opened due to consecutive failures`, error, {
+        gameCode,
+        type,
+        consecutiveFailures: state.consecutiveFailures,
+        threshold: state.threshold
+      })
+    }
+  }
+
+  private shouldSkipCardDueToCircuitBreaker(gameCode: string, error?: ETLError): boolean {
+    if (!error) return false
+
+    // Map error types to circuit breaker types
+    const typeMapping: Record<string, CircuitBreakerType> = {
+      'database_error': CircuitBreakerType.DATABASE,
+      'api_error': CircuitBreakerType.API_RATE_LIMIT,
+      'validation_error': CircuitBreakerType.VALIDATION,
+      'image_error': CircuitBreakerType.IMAGE_PROCESSING
+    }
+
+    const circuitBreakerType = typeMapping[error.type] || CircuitBreakerType.EXTERNAL_SERVICE
+    return this.isCardLevelCircuitBreakerOpen(gameCode, circuitBreakerType)
+  }
+
+  /**
+   * Circuit Breaker Implementation (Legacy)
    */
   private isCircuitBreakerOpen(gameCode: string): boolean {
     const state = this.circuitBreakers.get(gameCode)
@@ -1003,7 +1550,11 @@ export class ETLService {
             message: (error as Error).message,
             timestamp: new Date(),
             retryable: true
-          }]
+          }],
+          cardsSkipped: 0,
+          cardsRetried: 0,
+          imageProcessingCompleted: 0,
+          imageProcessingFailed: 0
         })
       }
     }

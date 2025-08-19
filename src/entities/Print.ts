@@ -14,6 +14,7 @@ import { Card } from './Card'
 import { CardSet } from './CardSet'
 import { CatalogSKU } from './CatalogSKU'
 import { CardImage } from './CardImage'
+import { ImageProcessingStatus } from '../../packages/tcg-catalog/src/types/ETLTypes'
 
 @Entity('prints')
 @Index('idx_prints_hash', ['printHash'], { unique: true })
@@ -21,6 +22,7 @@ import { CardImage } from './CardImage'
 @Index('idx_prints_set', ['setId'])
 @Index('idx_prints_rarity', ['rarity'])
 @Index('idx_prints_artist', ['artist'])
+@Index('idx_prints_image_status', ['imageProcessingStatus'])
 export class Print {
   @PrimaryGeneratedColumn('uuid')
   id: string
@@ -161,6 +163,20 @@ export class Print {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   blurhash: string | null
+
+  // Image processing status
+  @Column({
+    type: 'enum',
+    enum: ImageProcessingStatus,
+    default: ImageProcessingStatus.PENDING
+  })
+  imageProcessingStatus: ImageProcessingStatus
+
+  @Column({ type: 'timestamp', nullable: true })
+  imageProcessedAt: Date | null
+
+  @Column({ type: 'text', nullable: true })
+  imageProcessingError: string | null
 
   // Relations
   @OneToMany(() => CatalogSKU, sku => sku.print)

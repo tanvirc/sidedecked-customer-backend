@@ -38,6 +38,13 @@ export interface ETLResult {
   skusGenerated: number
   duration: number
   errors: ETLError[]
+  // Enhanced card-level tracking
+  cardResults?: CardImportResult[]
+  batchResults?: BatchImportResult[]
+  cardsSkipped: number
+  cardsRetried: number
+  imageProcessingCompleted: number
+  imageProcessingFailed: number
 }
 
 export interface ETLError {
@@ -168,4 +175,72 @@ export interface CircuitBreakerState {
   failureCount: number
   lastFailureTime?: Date
   resetTimeout: number
+}
+
+export enum CircuitBreakerType {
+  GAME_LEVEL = 'game_level',
+  DATABASE = 'database',
+  API_RATE_LIMIT = 'api_rate_limit',
+  VALIDATION = 'validation',
+  IMAGE_PROCESSING = 'image_processing',
+  EXTERNAL_SERVICE = 'external_service'
+}
+
+export interface CardLevelCircuitBreakerState {
+  type: CircuitBreakerType
+  gameCode: string
+  isOpen: boolean
+  failureCount: number
+  successCount: number
+  lastFailureTime?: Date
+  lastSuccessTime?: Date
+  consecutiveFailures: number
+  resetTimeout: number
+  threshold: number
+  halfOpenAttempts: number
+  maxHalfOpenAttempts: number
+}
+
+export interface CircuitBreakerConfig {
+  threshold: number
+  resetTimeout: number
+  maxHalfOpenAttempts: number
+  enabled: boolean
+}
+
+export enum ImageProcessingStatus {
+  PENDING = 'pending',
+  QUEUED = 'queued',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  RETRY = 'retry'
+}
+
+export interface CardImportResult {
+  cardName: string
+  oracleId: string
+  oracleHash: string
+  success: boolean
+  isUpdate: boolean
+  printsProcessed: number
+  printsCreated: number
+  printsUpdated: number
+  skusGenerated: number
+  imagesQueued: number
+  imageProcessingStatus: ImageProcessingStatus
+  error?: ETLError
+  retryCount: number
+  processingTimeMs: number
+  timestamp: Date
+}
+
+export interface BatchImportResult {
+  totalCards: number
+  successfulCards: number
+  failedCards: number
+  skippedCards: number
+  cardResults: CardImportResult[]
+  batchProcessingTimeMs: number
+  errors: ETLError[]
 }
