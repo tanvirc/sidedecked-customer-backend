@@ -288,11 +288,13 @@ export class YugiohTransformer {
         yugiohProdeck: yugiohCard.id.toString()
       },
 
+      // Images - Map YGOPRODeck image types to our universal format  
+      // IMPORTANT: image_url/image_url_small = full card images, image_url_cropped = artwork only
       images: yugiohCard.card_images?.[0] ? {
-        small: yugiohCard.card_images[0].image_url_small,
-        normal: yugiohCard.card_images[0].image_url,
-        large: yugiohCard.card_images[0].image_url,
-        artCrop: yugiohCard.card_images[0].image_url_cropped
+        small: yugiohCard.card_images[0].image_url_small,    // Full card, small size
+        normal: yugiohCard.card_images[0].image_url,         // Full card, normal size
+        large: yugiohCard.card_images[0].image_url,          // Full card, reuse normal size
+        artCrop: yugiohCard.card_images[0].image_url_cropped // Artwork only (no borders/text)
       } : undefined,
 
       prices: this.extractPrices(yugiohCard, index)

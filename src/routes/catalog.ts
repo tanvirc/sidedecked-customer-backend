@@ -6,7 +6,7 @@ import { CardSet } from '../entities/CardSet'
 import { Print } from '../entities/Print'
 import { Format } from '../entities/Format'
 import { CatalogSKU } from '../entities/CatalogSKU'
-import { CardImage, ImageStatus } from '../entities/CardImage'
+import { CardImage, ImageStatus, ImageType } from '../entities/CardImage'
 import { getStorageService } from '../config/infrastructure'
 import { config } from '../config/env'
 import { cdnService } from '../services/CDNService'
@@ -45,7 +45,16 @@ router.get('/cdn/health', async (req, res) => {
   }
 })
 
-// Helper function to get processed image URLs with CDN support and fallbacks
+/**
+ * Helper function to get processed image URLs with CDN support and fallbacks
+ * 
+ * IMAGE TYPE HIERARCHY:
+ * - MAIN images: Full card images (used for normal/small/large/thumbnail fields)
+ * - ART_CROP images: Artwork only, no borders/text (used ONLY for artCrop field)
+ * - BORDER_CROP images: Artwork with border (used ONLY for borderCrop field)
+ * 
+ * IMPORTANT: Never use ART_CROP images for main card display!
+ */
 async function getProcessedImageUrls(print: Print): Promise<{
   thumbnail?: string
   small?: string
@@ -69,8 +78,16 @@ async function getProcessedImageUrls(print: Print): Promise<{
     const images: any = {}
 
     // Process stored MinIO URLs and transform to CDN if enabled
+    // IMPORTANT: Process MAIN images first to ensure they take priority over ART_CROP
     if (processedImages.length > 0) {
-      for (const cardImage of processedImages) {
+      // Sort to process MAIN images before ART_CROP
+      const sortedImages = processedImages.sort((a, b) => {
+        if (a.imageType === ImageType.MAIN) return -1
+        if (b.imageType === ImageType.MAIN) return 1
+        return 0
+      })
+      
+      for (const cardImage of sortedImages) {
         console.log(`DEBUG: Processing CardImage ${cardImage.id}, type: ${cardImage.imageType}`)
         
         // Process storage URLs (always MinIO URLs from database)
@@ -78,28 +95,52 @@ async function getProcessedImageUrls(print: Print): Promise<{
           const storageUrls = cardImage.storageUrls as Record<string, string>
           console.log('DEBUG: Found storage URLs:', Object.keys(storageUrls))
           
-          for (const [size, url] of Object.entries(storageUrls)) {
-            if (!url) continue
-            
-            try {
-              // Transform MinIO URL to CDN URL if CDN is enabled
-              // cdnService.getFallbackUrl will return CDN URL when enabled, MinIO URL when disabled
-              const publicUrl = cdnService.getFallbackUrl(url, url)
+          // Check image type to determine which fields to populate
+          if (cardImage.imageType === ImageType.MAIN) {
+            // MAIN images should populate normal/small/large/thumbnail fields
+            for (const [size, url] of Object.entries(storageUrls)) {
+              if (!url) continue
               
-              console.log(`DEBUG: Transformed "${url}" to "${publicUrl}"`)
-              
-              // Map to image sizes, avoid overwriting existing URLs
-              if (size === 'thumbnail' && !images.thumbnail) images.thumbnail = publicUrl
-              else if (size === 'small' && !images.small) images.small = publicUrl
-              else if (size === 'normal' && !images.normal) images.normal = publicUrl
-              else if (size === 'large' && !images.large) images.large = publicUrl
-              else if (size === 'artCrop' && !images.artCrop) images.artCrop = publicUrl
-              else if (size === 'borderCrop' && !images.borderCrop) images.borderCrop = publicUrl
-              
-            } catch (urlError) {
-              console.warn(`DEBUG: Failed to process storage URL for size ${size}:`, urlError)
+              try {
+                const publicUrl = cdnService.getFallbackUrl(url, url)
+                console.log(`DEBUG: MAIN image - mapping ${size} to main display fields`)
+                
+                // Only map MAIN images to the primary display fields
+                if (size === 'thumbnail' && !images.thumbnail) images.thumbnail = publicUrl
+                else if (size === 'small' && !images.small) images.small = publicUrl
+                else if (size === 'normal' && !images.normal) images.normal = publicUrl
+                else if (size === 'large' && !images.large) images.large = publicUrl
+                
+              } catch (urlError) {
+                console.warn(`DEBUG: Failed to process MAIN image URL for size ${size}:`, urlError)
+              }
+            }
+          } else if (cardImage.imageType === ImageType.ART_CROP) {
+            // ART_CROP images should ONLY populate the artCrop field
+            const normalUrl = storageUrls.normal || storageUrls.large || storageUrls.small
+            if (normalUrl && !images.artCrop) {
+              try {
+                const publicUrl = cdnService.getFallbackUrl(normalUrl, normalUrl)
+                console.log(`DEBUG: ART_CROP image - mapping to artCrop field only`)
+                images.artCrop = publicUrl
+              } catch (urlError) {
+                console.warn(`DEBUG: Failed to process ART_CROP image URL:`, urlError)
+              }
+            }
+          } else if (cardImage.imageType === ImageType.BORDER_CROP) {
+            // BORDER_CROP images should ONLY populate the borderCrop field
+            const normalUrl = storageUrls.normal || storageUrls.large || storageUrls.small
+            if (normalUrl && !images.borderCrop) {
+              try {
+                const publicUrl = cdnService.getFallbackUrl(normalUrl, normalUrl)
+                console.log(`DEBUG: BORDER_CROP image - mapping to borderCrop field only`)
+                images.borderCrop = publicUrl
+              } catch (urlError) {
+                console.warn(`DEBUG: Failed to process BORDER_CROP image URL:`, urlError)
+              }
             }
           }
+          // Skip other image types (BACK, THUMBNAIL, FULL) for now
         }
       }
     }
@@ -123,7 +164,17 @@ async function getProcessedImageUrls(print: Print): Promise<{
       }
     }
 
-    console.log('DEBUG: Final image URLs with CDN support:', images)
+    // Log final image mapping for debugging
+    console.log('DEBUG: Final image URLs with CDN support:', {
+      hasNormal: !!images.normal,
+      hasSmall: !!images.small,
+      hasLarge: !!images.large,
+      hasThumbnail: !!images.thumbnail,
+      hasArtCrop: !!images.artCrop,
+      normalIsArtCrop: images.normal === images.artCrop,
+      imageTypes: processedImages.map(img => img.imageType)
+    })
+    
     return images
     
   } catch (error) {

@@ -271,12 +271,13 @@ export class ScryfallTransformer {
         tcgplayer: scryfallCard.tcgplayer_id?.toString()
       },
 
-      // Images
+      // Images - Map Scryfall image types to our universal format
+      // IMPORTANT: small/normal/large = full card images, art_crop = artwork only
       images: scryfallCard.image_uris ? {
-        small: scryfallCard.image_uris.small,
-        normal: scryfallCard.image_uris.normal,
-        large: scryfallCard.image_uris.large,
-        artCrop: scryfallCard.image_uris.art_crop
+        small: scryfallCard.image_uris.small,      // Full card, small size
+        normal: scryfallCard.image_uris.normal,    // Full card, normal size  
+        large: scryfallCard.image_uris.large,      // Full card, large size
+        artCrop: scryfallCard.image_uris.art_crop  // Artwork only (no borders/text)
       } : undefined,
 
       // Prices

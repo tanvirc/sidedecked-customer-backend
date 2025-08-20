@@ -31,6 +31,14 @@ import {
 import { getImageQueue } from '../../../../src/config/infrastructure'
 import { ImageSyncService } from './ImageSyncService'
 
+/**
+ * ETL Service for importing card data from external APIs
+ * 
+ * IMAGE PROCESSING HIERARCHY:
+ * - normal/large/small: Full card images (ALWAYS use for main display)
+ * - artCrop: Artwork only (NEVER use for main display) 
+ * - Processing order ensures full card images take priority over artwork
+ */
 export class ETLService {
   private circuitBreakers: Map<string, CircuitBreakerState> = new Map()
   private cardLevelCircuitBreakers: Map<string, CardLevelCircuitBreakerState> = new Map()
@@ -1396,11 +1404,12 @@ export class ETLService {
       const urlMapping: Record<string, string[]> = {} // Maps unique URL to image types
       
       // Collect all potential image URLs
+      // IMPORTANT: Order matters for deduplication - prioritize full card images first
       const potentialImages = {
-        normal: images.normal,
-        large: images.large,
-        small: images.small,
-        artCrop: images.artCrop,
+        normal: images.normal,      // Full card image (priority 1)
+        large: images.large,        // Full card image (priority 2)
+        small: images.small,        // Full card image (priority 3)
+        artCrop: images.artCrop,    // Artwork only (lower priority)
         borderCrop: images.borderCrop,
         back: images.back
       }

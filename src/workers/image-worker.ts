@@ -229,13 +229,17 @@ class ImageWorker {
               await cardImageRepo.save(cardImage)
               
               // Update Print entity with image URLs for quick access
-              if (imageType === 'normal') {
-                print.imageNormal = result.urls?.normal || null
-                print.imageSmall = result.urls?.small || null
-                print.imageLarge = result.urls?.large || null
-                print.blurhash = result.blurhash || null
+              // IMPORTANT: Only update the correct fields based on image type
+              if (imageType === 'normal' || imageType === 'large' || imageType === 'small') {
+                // Full card images - update main display fields
+                print.imageNormal = result.urls?.normal || print.imageNormal
+                print.imageSmall = result.urls?.small || print.imageSmall
+                print.imageLarge = result.urls?.large || print.imageLarge
+                print.blurhash = result.blurhash || print.blurhash
               } else if (imageType === 'artCrop') {
-                print.imageArtCrop = result.urls?.normal || null
+                // Artwork only - ONLY update the artCrop field
+                print.imageArtCrop = result.urls?.normal || result.urls?.large || result.urls?.small || null
+                // Do NOT update imageNormal/Small/Large for artCrop images
               }
               
               processedImages.push({
