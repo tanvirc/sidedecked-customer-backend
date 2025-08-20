@@ -119,51 +119,45 @@ export class YugiohTransformer {
   }
 
   private buildParams(jobType: ETLJobType, limit?: number): Record<string, any> {
-    const params: Record<string, any> = {
-      // Note: 'misc' and 'format' are not valid YGOProdeck API parameters
-      // Using only documented parameters to avoid 400 errors
-    }
+    const params: Record<string, any> = {}
 
-    // For small limits, we can use more specific filters to reduce API response size
-    if (limit && limit <= 100) {
-      // For small limits, fetch only monster cards (most common card type)
-      params.type = 'Normal Monster'
-      return params
-    }
-
-    switch (jobType) {
-      case ETLJobType.FULL:
-      case ETLJobType.FULL_SYNC:
-        // No additional filters - get all cards
-        break
-      case ETLJobType.INCREMENTAL:
-      case ETLJobType.INCREMENTAL_SYNC:
-        // For testing with limits, use broader query
-        if (limit && limit <= 1000) {
-          // Use specific filter for testing
-          params.type = 'Effect Monster'
-        }
-        // Note: YGOProdeck API doesn't support date filtering
-        // For incremental updates, we would need to implement client-side filtering
-        break
-      case ETLJobType.SETS:
-        // Use archetype filter as a proxy for recent cards
-        params.archetype = 'Blue-Eyes'
-        break
-      case ETLJobType.BANLIST_UPDATE:
-        // For banlist updates, get popular archetype cards
-        params.archetype = 'Dark Magician'
-        break
-      default:
-        // Default to monster cards for small limits
-        if (limit && limit <= 100) {
-          params.type = 'Effect Monster'
-        }
-        // For larger queries, use a popular archetype
-        else {
+    // Strategy: Use broader queries for larger limits to ensure we get enough results
+    // Avoid overly restrictive filters that might return fewer cards than requested
+    
+    if (limit) {
+      if (limit <= 50) {
+        // For very small limits, use monster cards
+        params.type = 'Effect Monster'
+      } else if (limit <= 200) {
+        // For medium limits, use broader monster category
+        params.race = 'Warrior' // Popular race with many cards
+      } else {
+        // For large limits (500+), use minimal filtering to get maximum cards
+        // Don't add restrictive type/archetype filters
+        logger.info(`Using broad query for YuGiOh limit of ${limit} cards`)
+      }
+    } else {
+      // For unlimited requests, follow job type logic
+      switch (jobType) {
+        case ETLJobType.FULL:
+        case ETLJobType.FULL_SYNC:
+          // No additional filters - get all cards
+          break
+        case ETLJobType.INCREMENTAL:
+        case ETLJobType.INCREMENTAL_SYNC:
+          // Use a broad archetype for incremental
           params.archetype = 'Blue-Eyes'
-        }
-        break
+          break
+        case ETLJobType.SETS:
+          params.archetype = 'Blue-Eyes'
+          break
+        case ETLJobType.BANLIST_UPDATE:
+          params.archetype = 'Dark Magician'
+          break
+        default:
+          params.type = 'Effect Monster'
+          break
+      }
     }
 
     return params
@@ -192,9 +186,9 @@ export class YugiohTransformer {
 
         // YuGiOh specific fields
         attribute: card.attribute,
-        levelRank: card.level,
-        attackValue: card.atk,
-        defenseValueYugioh: card.def,
+        levelRank: this.safeParseInt(card.level),
+        attackValue: this.safeParseInt(card.atk),
+        defenseValueYugioh: this.safeParseInt(card.def),
 
         // MTG fields (undefined for YuGiOh)
         manaCost: undefined,
@@ -440,18 +434,32 @@ export class YugiohTransformer {
     // Try to get USD price from TCGPlayer first, then other sources
     let usdPrice: number | undefined
 
-    if (prices.tcgplayer_price && prices.tcgplayer_price !== '0') {
-      usdPrice = parseFloat(prices.tcgplayer_price)
-    } else if (prices.cardmarket_price && prices.cardmarket_price !== '0') {
-      usdPrice = parseFloat(prices.cardmarket_price)
-    } else if (prices.amazon_price && prices.amazon_price !== '0') {
-      usdPrice = parseFloat(prices.amazon_price)
-    }
+    usdPrice = this.safeParseFloat(prices.tcgplayer_price) 
+      || this.safeParseFloat(prices.cardmarket_price)
+      || this.safeParseFloat(prices.amazon_price)
 
-    return usdPrice && !isNaN(usdPrice) ? { usd: usdPrice } : undefined
+    return usdPrice ? { usd: usdPrice } : undefined
   }
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  private safeParseInt(value: any, defaultValue: number | undefined = undefined): number | undefined {
+    if (value === null || value === undefined || value === '' || value === 'NULL' || value === 'N/A') {
+      return defaultValue
+    }
+    
+    const parsed = parseInt(String(value), 10)
+    return isNaN(parsed) ? defaultValue : parsed
+  }
+
+  private safeParseFloat(value: any, defaultValue: number | undefined = undefined): number | undefined {
+    if (value === null || value === undefined || value === '' || value === 'NULL' || value === 'N/A' || value === '0') {
+      return defaultValue
+    }
+    
+    const parsed = parseFloat(String(value))
+    return isNaN(parsed) ? defaultValue : parsed
   }
 }
