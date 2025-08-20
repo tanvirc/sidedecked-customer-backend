@@ -178,6 +178,16 @@ class ImageWorker {
       for (const [primaryImageType, imageUrl] of Object.entries(imageUrls)) {
         if (!imageUrl) continue
         
+        // SAFETY FILTER: Skip artCrop processing to prevent storage overwrites
+        if (primaryImageType === 'artCrop') {
+          logger.info('Skipping artCrop image processing (not needed)', {
+            printId,
+            primaryImageType,
+            reason: 'artCrop images cause storage overwrites and are not needed'
+          })
+          continue
+        }
+        
         try {
           // Normalize URL to find all image types this URL represents
           const normalizedUrl = this.normalizeImageUrl(imageUrl)

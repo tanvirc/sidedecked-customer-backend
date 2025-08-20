@@ -272,12 +272,12 @@ export class ScryfallTransformer {
       },
 
       // Images - Map Scryfall image types to our universal format
-      // IMPORTANT: small/normal/large = full card images, art_crop = artwork only
+      // IMPORTANT: small/normal/large = full card images
+      // NOTE: artCrop (art_crop) intentionally excluded to prevent storage overwrites
       images: scryfallCard.image_uris ? {
         small: scryfallCard.image_uris.small,      // Full card, small size
         normal: scryfallCard.image_uris.normal,    // Full card, normal size  
-        large: scryfallCard.image_uris.large,      // Full card, large size
-        artCrop: scryfallCard.image_uris.art_crop  // Artwork only (no borders/text)
+        large: scryfallCard.image_uris.large       // Full card, large size
       } : undefined,
 
       // Prices
