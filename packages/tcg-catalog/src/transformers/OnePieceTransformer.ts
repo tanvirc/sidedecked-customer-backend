@@ -94,34 +94,73 @@ export class OnePieceTransformer {
         limit
       })
       
-      const setsToProcess = this.getSetsToProcess(sets, jobType)
+      // For limited requests, we may need to fetch from more sets than the job type normally specifies
+      let setsToProcess = this.getSetsToProcess(sets, jobType)
+      
+      // If we have a limit, we may need to expand our set selection
+      if (limit && limit > 0) {
+        // Start with initial sets, but be prepared to fetch from more sets if needed
+        const initialSetCount = setsToProcess.length
+        logger.info(`Starting with ${initialSetCount} sets for ${jobType}, will expand if needed to reach limit of ${limit}`)
+      }
 
-      // Fetch cards from each set
-      for (const set of setsToProcess) {
+      // Fetch cards from sets, expanding the set list if needed to reach limit
+      let setIndex = 0
+      const reversedSets = [...sets].reverse() // Process newest sets first
+      
+      while (setIndex < reversedSets.length && (!limit || allCards.length < limit)) {
+        const set = reversedSets[setIndex]
+        
+        // Skip if this set is not in our initial processing list AND we haven't reached the initial set count yet
+        if (setIndex >= setsToProcess.length) {
+          logger.info(`Expanding beyond initial ${setsToProcess.length} sets to reach limit. Fetching from ${set.set_id}`)
+        }
+        
         try {
-          logger.debug(`Fetching cards from set ${set.set_id}`, { setName: set.set_name })
+          logger.debug(`Fetching cards from set ${set.set_id}`, { 
+            setName: set.set_name, 
+            setIndex: setIndex + 1, 
+            totalSets: reversedSets.length,
+            currentTotal: allCards.length,
+            targetLimit: limit 
+          })
+          
           const setCards = await this.getCardsFromSet(set.set_id)
           
-          allCards.push(...setCards)
-          
-          logger.debug(`Fetched ${setCards.length} cards from ${set.set_id}`, {
-            totalCardsSoFar: allCards.length
-          })
-
-          // Check if we've reached the limit
-          if (limit && allCards.length >= limit) {
-            allCards = allCards.slice(0, limit)
-            logger.info(`✅ Reached limit of ${limit} cards, stopping fetch`)
-            break
+          if (setCards.length > 0) {
+            // If adding all these cards would exceed limit, only add what we need
+            if (limit && allCards.length + setCards.length > limit) {
+              const cardsNeeded = limit - allCards.length
+              allCards.push(...setCards.slice(0, cardsNeeded))
+              logger.info(`✅ Reached limit of ${limit} cards with partial set ${set.set_id} (took ${cardsNeeded}/${setCards.length} cards)`)
+              break
+            } else {
+              allCards.push(...setCards)
+            }
+            
+            logger.debug(`Fetched ${setCards.length} cards from ${set.set_id}`, {
+              totalCardsSoFar: allCards.length,
+              remainingToLimit: limit ? limit - allCards.length : 'unlimited'
+            })
           }
 
         } catch (error) {
           logger.warn(`Failed to fetch cards from set ${set.set_id}`, { error })
         }
+        
+        setIndex++
+        
+        // For non-limited requests, stick to the original set selection
+        if (!limit && setIndex >= setsToProcess.length) {
+          logger.info(`Completed processing ${setsToProcess.length} sets for ${jobType} (no limit specified)`)
+          break
+        }
       }
 
       logger.info('Completed One Piece TCG data fetch', {
         totalCards: allCards.length,
+        setsProcessed: setIndex,
+        targetLimit: limit || 'unlimited',
         jobType
       })
 
@@ -210,11 +249,11 @@ export class OnePieceTransformer {
         keywords: this.extractKeywords(canonicalCard),
 
         // One Piece specific fields
-        cost: canonicalCard.card_cost && canonicalCard.card_cost !== 'NULL' ? parseInt(canonicalCard.card_cost, 10) : undefined,
+        cost: this.safeParseInt(canonicalCard.card_cost),
         donCost: undefined, // Will be extracted from cost if needed
-        lifeValue: canonicalCard.life ? parseInt(canonicalCard.life, 10) : undefined,
-        counterValue: canonicalCard.counter_amount || undefined,
-        power: canonicalCard.card_power ? parseInt(canonicalCard.card_power, 10) : undefined,
+        lifeValue: this.safeParseInt(canonicalCard.life),
+        counterValue: this.safeParseInt(canonicalCard.counter_amount),
+        power: this.safeParseInt(canonicalCard.card_power),
 
         // MTG fields (null for One Piece)
         manaCost: undefined,
@@ -375,5 +414,14 @@ export class OnePieceTransformer {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  private safeParseInt(value: any, defaultValue: number | undefined = undefined): number | undefined {
+    if (value === null || value === undefined || value === '' || value === 'NULL' || value === 'N/A') {
+      return defaultValue
+    }
+    
+    const parsed = parseInt(String(value), 10)
+    return isNaN(parsed) ? defaultValue : parsed
   }
 }
