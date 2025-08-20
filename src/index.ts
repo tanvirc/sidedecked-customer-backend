@@ -57,7 +57,12 @@ async function createApp(): Promise<express.Application> {
   // Request logging
   app.use(requestLogger)
 
-  // Health check
+  // Lightweight ping endpoint for cold start detection (no service checks)
+  app.get('/ping', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  })
+
+  // Comprehensive health check
   app.get('/health', async (req, res) => {
     try {
       const serviceContainer = getServiceContainer()
