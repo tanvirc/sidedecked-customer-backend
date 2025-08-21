@@ -66,6 +66,7 @@ interface PokemonCard {
   images?: {
     small: string
     large: string
+    // Note: Pokemon TCG API doesn't provide PNG format like Scryfall
   }
   tcgplayer?: {
     url: string
@@ -106,9 +107,11 @@ export class PokemonTransformer {
     // Configure Pokemon TCG SDK
     if (this.apiKey) {
       process.env.POKEMONTCG_API_KEY = this.apiKey
-      logger.debug('Pokemon TCG SDK configured with API key')
+      logger.info('Pokemon TCG SDK configured with API key - full rate limits available')
     } else {
-      logger.warn('No Pokemon TCG API key found - using rate-limited requests')
+      logger.warn('⚠️  No Pokemon TCG API key found - using limited rate requests')
+      logger.warn('   For better reliability, set POKEMON_TCG_API_KEY environment variable')
+      logger.warn('   Get a free API key at: https://dev.pokemontcg.io/')
     }
   }
 
@@ -153,12 +156,28 @@ export class PokemonTransformer {
               )
             ])
           } catch (error) {
-            logger.error(`Failed to fetch Pokemon TCG page ${page}`, error as Error, { query, page, pageSize })
-            // If first page fails, throw error, otherwise break pagination
+            const errorMessage = (error as Error).message
+            logger.error(`Failed to fetch Pokemon TCG page ${page}`, error as Error, { 
+              query, 
+              page, 
+              pageSize,
+              hasApiKey: !!this.apiKey,
+              errorMessage
+            })
+            
+            // If first page fails, provide helpful error and throw
             if (page === 1) {
+              // Provide helpful error message for common issues
+              if (errorMessage.includes('timeout') || errorMessage.includes('ECONNRESET') || errorMessage.includes('ENOTFOUND')) {
+                throw new Error(`Pokemon TCG API network error: ${errorMessage}. Check internet connection and API status at https://pokemontcg.io/`)
+              } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+                throw new Error(`Pokemon TCG API rate limit exceeded. Set POKEMON_TCG_API_KEY environment variable for higher limits. Get a free key at https://dev.pokemontcg.io/`)
+              } else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
+                throw new Error(`Pokemon TCG API authentication failed. Check your POKEMON_TCG_API_KEY environment variable.`)
+              }
               throw error
             } else {
-              logger.warn(`Stopping pagination due to error on page ${page}`)
+              logger.warn(`Stopping pagination due to error on page ${page}: ${errorMessage}`)
               break
             }
           }
@@ -227,7 +246,23 @@ export class PokemonTransformer {
             )
           ])
         } catch (error) {
-          logger.error('Failed to fetch Pokemon TCG cards (single request)', error as Error, { query, requestPageSize })
+          const errorMessage = (error as Error).message
+          logger.error('Failed to fetch Pokemon TCG cards (single request)', error as Error, { 
+            query, 
+            requestPageSize,
+            hasApiKey: !!this.apiKey,
+            errorMessage
+          })
+          
+          // Provide helpful error message for common issues
+          if (errorMessage.includes('timeout') || errorMessage.includes('ECONNRESET') || errorMessage.includes('ENOTFOUND')) {
+            throw new Error(`Pokemon TCG API network error: ${errorMessage}. Check internet connection and API status at https://pokemontcg.io/`)
+          } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+            throw new Error(`Pokemon TCG API rate limit exceeded. Set POKEMON_TCG_API_KEY environment variable for higher limits. Get a free key at https://dev.pokemontcg.io/`)
+          } else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
+            throw new Error(`Pokemon TCG API authentication failed. Check your POKEMON_TCG_API_KEY environment variable.`)
+          }
+          
           throw error
         }
 
@@ -407,11 +442,12 @@ export class PokemonTransformer {
         tcgplayer: pokemonCard.tcgplayer?.url
       },
 
-      // Images
+      // Images - prioritize large image for quality (Pokemon API only has small/large)
       images: pokemonCard.images ? {
-        small: pokemonCard.images.small,
-        normal: pokemonCard.images.large,
-        large: pokemonCard.images.large
+        small: pokemonCard.images.small,   // Small image (~146x204)
+        normal: pokemonCard.images.large,  // Use large as normal (~245x342)
+        large: pokemonCard.images.large    // Large image (~245x342)
+        // Note: Pokemon TCG API doesn't provide PNG/original like Scryfall
       } : undefined,
 
       // Prices
