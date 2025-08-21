@@ -106,8 +106,9 @@ async function startServer(): Promise<void> {
     validateConfig()
     console.log('✅ Configuration validated')
 
-    // Initialize database
-    await initializeDatabase()
+    // Initialize database with retry logic
+    console.log('🔄 Initializing database connection...')
+    await initializeDatabase(10) // Increased retries for cold starts
     console.log('✅ Database initialized')
     
     // Debug: Check if pricing tables exist
@@ -201,7 +202,27 @@ Ready to serve TCG catalog, deck builder, community, and pricing APIs!
 
   } catch (error) {
     console.error('❌ Failed to start server:', error)
-    process.exit(1)
+    
+    // Provide more helpful error messages for common issues
+    if (error instanceof Error) {
+      if (error.message.includes('ECONNREFUSED')) {
+        console.error('💡 Database connection refused. This might be a cold start issue on Railway.')
+        console.error('💡 The database service may still be starting up. This should resolve automatically.')
+      } else if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        console.error('💡 Database tables not found. Make sure migrations have been run.')
+        console.error('💡 Run: npm run migration:deploy')
+      } else if (error.message.includes('connect ETIMEDOUT')) {
+        console.error('💡 Database connection timed out. Check DATABASE_URL and network connectivity.')
+      }
+    }
+    
+    // In production, try to exit gracefully after a delay to allow for logging
+    if (config.NODE_ENV === 'production') {
+      console.log('⏳ Waiting 5 seconds before exit to ensure logs are flushed...')
+      setTimeout(() => process.exit(1), 5000)
+    } else {
+      process.exit(1)
+    }
   }
 }
 

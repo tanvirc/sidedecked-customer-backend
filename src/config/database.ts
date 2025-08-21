@@ -37,6 +37,15 @@ export const AppDataSource = new DataSource({
   url: config.DATABASE_URL,
   synchronize: false, // Always use migrations in production
   logging: config.NODE_ENV === 'development' && !process.env.DISABLE_TYPEORM_LOGGING,
+  // Connection pool settings for Railway
+  extra: {
+    connectionTimeoutMillis: 30000,
+    idleTimeoutMillis: 30000,
+    max: 20,
+    ssl: config.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  },
+  // Connection retry settings
+  connectTimeoutMS: 30000,
   entities: [
     // TCG Catalog
     Game,
@@ -81,23 +90,39 @@ export const AppDataSource = new DataSource({
   subscribers: ['dist/src/subscribers/*.js']
 })
 
-export const initializeDatabase = async (): Promise<void> => {
-  try {
-    if (!AppDataSource.isInitialized) {
-      await AppDataSource.initialize()
-      console.log('🗄️  Database connection established')
-      
-      // Run pending migrations
-      const pendingMigrations = await AppDataSource.showMigrations()
-      if (pendingMigrations) {
-        console.log('⏳ Running pending migrations...')
-        await AppDataSource.runMigrations()
-        console.log('✅ Migrations completed')
+export const initializeDatabase = async (maxRetries: number = 5): Promise<void> => {
+  let retryCount = 0
+  const retryDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 10000) // Exponential backoff, max 10s
+
+  while (retryCount < maxRetries) {
+    try {
+      if (!AppDataSource.isInitialized) {
+        console.log(`🔄 Attempting database connection (attempt ${retryCount + 1}/${maxRetries})...`)
+        await AppDataSource.initialize()
+        console.log('🗄️  Database connection established')
+        
+        // Run pending migrations
+        const pendingMigrations = await AppDataSource.showMigrations()
+        if (pendingMigrations) {
+          console.log('⏳ Running pending migrations...')
+          await AppDataSource.runMigrations()
+          console.log('✅ Migrations completed')
+        }
+        return // Success, exit function
       }
+    } catch (error) {
+      retryCount++
+      console.error(`❌ Database connection failed (attempt ${retryCount}/${maxRetries}):`, (error as Error).message)
+      
+      if (retryCount >= maxRetries) {
+        console.error('❌ Max database connection retries exceeded')
+        throw new Error(`Database connection failed after ${maxRetries} attempts: ${(error as Error).message}`)
+      }
+      
+      const delay = retryDelay(retryCount - 1)
+      console.log(`⏳ Retrying database connection in ${delay}ms...`)
+      await new Promise(resolve => setTimeout(resolve, delay))
     }
-  } catch (error) {
-    console.error('❌ Database connection failed:', error)
-    throw error
   }
 }
 

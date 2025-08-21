@@ -7,7 +7,7 @@ export const config = {
   // Environment
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: parseInt(process.env.PORT || process.env.API_PORT || '7000'),
-  HOST: process.env.HOST || process.env.API_HOST || '0.0.0.0',
+  HOST: process.env.HOST || process.env.API_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost'),
   
   // Database
   DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost:5432/sidedecked_db',
