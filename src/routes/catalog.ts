@@ -920,17 +920,17 @@ router.get('/search/facets', async (req, res) => {
             SELECT 
               card.id,
               jsonb_array_elements_text(card.colors) as color_value
-            FROM card
-            LEFT JOIN game ON card.game_id = game.id
+            FROM cards card
+            LEFT JOIN games game ON card.game_id = game.id
             WHERE card.deleted_at IS NULL 
               AND game.code = 'MTG'
               AND card.colors IS NOT NULL
               AND jsonb_array_length(card.colors) > 0
           ) color_expanded
-          LEFT JOIN card ON card.id = color_expanded.id
-          LEFT JOIN game ON card.game_id = game.id
-          LEFT JOIN print prints ON prints.card_id = card.id
-          LEFT JOIN card_set "set" ON prints.set_id = "set".id
+          LEFT JOIN cards card ON card.id = color_expanded.id
+          LEFT JOIN games game ON card.game_id = game.id
+          LEFT JOIN prints ON prints.card_id = card.id
+          LEFT JOIN card_sets "set" ON prints.set_id = "set".id
           WHERE game.code = 'MTG'
           ${types ? 'AND card.primary_type = ANY($1)' : ''}
           ${rarities && types ? 'AND prints.rarity = ANY($2)' : rarities ? 'AND prints.rarity = ANY($1)' : ''}
