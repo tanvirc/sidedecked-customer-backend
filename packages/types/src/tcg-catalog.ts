@@ -115,13 +115,27 @@ export interface Print extends BaseEntity {
   frame: string           // 1993, 1997, 2003, 2015, future, etc.
   border_color: string    // black, white, borderless, etc.
   
-  // Availability flags
+  // Format legality - MTG
   is_legal_standard: boolean
   is_legal_pioneer: boolean  
   is_legal_modern: boolean
   is_legal_legacy: boolean
   is_legal_vintage: boolean
   is_legal_commander: boolean
+  is_legal_pauper: boolean
+  is_legal_brawl: boolean
+  
+  // Format legality - Pokemon TCG
+  is_legal_pokemon_standard: boolean
+  is_legal_pokemon_expanded: boolean
+  is_legal_pokemon_unlimited: boolean
+  
+  // Format legality - Yu-Gi-Oh!
+  is_legal_yugioh_advanced: boolean
+  is_legal_yugioh_traditional: boolean
+  
+  // Format legality - One Piece Card Game
+  is_legal_onepiece_standard: boolean
   
   // Market data
   tcgplayer_id?: string

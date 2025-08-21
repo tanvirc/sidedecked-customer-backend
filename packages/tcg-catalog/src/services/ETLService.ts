@@ -448,7 +448,7 @@ export class ETLService {
             artist: printData.artist
           })
 
-          const print = await this.upsertPrint(printData, card.id, manager)
+          const print = await this.upsertPrint(printData, card.id, manager, game.code)
           if (print.isNew) {
             result.printsCreated++
           } else {
@@ -872,7 +872,7 @@ export class ETLService {
   /**
    * Upsert print with duplicate detection
    */
-  private async upsertPrint(printData: any, cardId: string, manager: any): Promise<{
+  private async upsertPrint(printData: any, cardId: string, manager: any, gameCode: string): Promise<{
     id: string
     isNew: boolean
   }> {
@@ -906,7 +906,7 @@ export class ETLService {
       frame: printData.frame,
       borderColor: printData.borderColor,
       // Format legality (from transformer data)
-      ...this.extractFormatLegalityFields(printData.formatLegality),
+      ...this.extractFormatLegalityFields(printData.formatLegality, gameCode),
       // External IDs
       scryfallId: printData.externalIds?.scryfall,
       tcgplayerId: printData.externalIds?.tcgplayer,
@@ -1337,54 +1337,101 @@ export class ETLService {
   /**
    * Extract format legality fields from transformer data
    */
-  private extractFormatLegalityFields(formatLegality?: Record<string, string>): any {
+  private extractFormatLegalityFields(formatLegality?: Record<string, string>, gameCode?: string): any {
     const legalityFields: any = {
+      // MTG formats
       isLegalStandard: false,
       isLegalPioneer: false,
       isLegalModern: false,
       isLegalLegacy: false,
       isLegalVintage: false,
-      isLegalCommander: false
+      isLegalCommander: false,
+      isLegalPauper: false,
+      isLegalBrawl: false,
+      
+      // Pokemon formats
+      isLegalPokemonStandard: false,
+      isLegalPokemonExpanded: false,
+      isLegalPokemonUnlimited: false,
+      
+      // Yu-Gi-Oh! formats
+      isLegalYugiohAdvanced: false,
+      isLegalYugiohTraditional: false,
+      
+      // One Piece formats
+      isLegalOnePieceStandard: false
     }
 
     if (!formatLegality) {
       return legalityFields
     }
 
-    // Map transformer format codes to entity fields
-    if (formatLegality.standard === 'legal') {
-      legalityFields.isLegalStandard = true
-    }
-    if (formatLegality.pioneer === 'legal') {
-      legalityFields.isLegalPioneer = true
-    }
-    if (formatLegality.modern === 'legal') {
-      legalityFields.isLegalModern = true
-    }
-    if (formatLegality.legacy === 'legal') {
-      legalityFields.isLegalLegacy = true
-    }
-    if (formatLegality.vintage === 'legal') {
-      legalityFields.isLegalVintage = true
-    }
-    if (formatLegality.commander === 'legal') {
-      legalityFields.isLegalCommander = true
-    }
+    // Game-specific format mapping
+    switch (gameCode) {
+      case 'MTG':
+        // MTG format mapping (from Scryfall API)
+        if (formatLegality.standard === 'legal') {
+          legalityFields.isLegalStandard = true
+        }
+        if (formatLegality.pioneer === 'legal') {
+          legalityFields.isLegalPioneer = true
+        }
+        if (formatLegality.modern === 'legal') {
+          legalityFields.isLegalModern = true
+        }
+        if (formatLegality.legacy === 'legal') {
+          legalityFields.isLegalLegacy = true
+        }
+        if (formatLegality.vintage === 'legal') {
+          legalityFields.isLegalVintage = true
+        }
+        if (formatLegality.commander === 'legal') {
+          legalityFields.isLegalCommander = true
+        }
+        if (formatLegality.pauper === 'legal') {
+          legalityFields.isLegalPauper = true
+        }
+        if (formatLegality.brawl === 'legal') {
+          legalityFields.isLegalBrawl = true
+        }
+        break
 
-    // Handle Pokemon-specific formats
-    if (formatLegality.expanded === 'legal') {
-      legalityFields.isLegalModern = true // Map expanded to modern for Pokemon
-    }
-    if (formatLegality.unlimited === 'legal') {
-      legalityFields.isLegalLegacy = true // Map unlimited to legacy for Pokemon
-    }
+      case 'POKEMON':
+        // Pokemon format mapping (from Pokemon TCG API)
+        if (formatLegality.standard === 'legal') {
+          legalityFields.isLegalPokemonStandard = true
+        }
+        if (formatLegality.expanded === 'legal') {
+          legalityFields.isLegalPokemonExpanded = true
+        }
+        if (formatLegality.unlimited === 'legal') {
+          legalityFields.isLegalPokemonUnlimited = true
+        }
+        break
 
-    // Handle YuGiOh-specific formats
-    if (formatLegality.tcg === 'legal') {
-      legalityFields.isLegalStandard = true // Map TCG to standard for YuGiOh
-    }
-    if (formatLegality.ocg === 'legal') {
-      legalityFields.isLegalModern = true // Map OCG to modern for YuGiOh
+      case 'YUGIOH':
+        // Yu-Gi-Oh! format mapping (general - both advanced and traditional are same for most cards)
+        if (formatLegality.tcg === 'legal' || formatLegality.advanced === 'legal') {
+          legalityFields.isLegalYugiohAdvanced = true
+          legalityFields.isLegalYugiohTraditional = true // Traditional allows more cards, so if advanced is legal, traditional is too
+        }
+        if (formatLegality.traditional === 'legal') {
+          legalityFields.isLegalYugiohTraditional = true
+        }
+        break
+
+      case 'OPTCG':
+        // One Piece format mapping (currently all cards are legal in standard)
+        if (formatLegality.standard === 'legal' || formatLegality.onepiece === 'legal') {
+          legalityFields.isLegalOnePieceStandard = true
+        }
+        // For now, assume all One Piece cards are legal in standard format
+        legalityFields.isLegalOnePieceStandard = true
+        break
+
+      default:
+        // If game code is unknown, don't set any legality
+        break
     }
 
     return legalityFields

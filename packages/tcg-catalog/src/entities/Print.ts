@@ -85,7 +85,7 @@ export class Print {
   @Column({ type: 'varchar', length: 50, nullable: true })
   borderColor: string // black, white, silver, gold
 
-  // Format legality
+  // Format legality - MTG
   @Column({ type: 'boolean', default: false })
   isLegalStandard: boolean
 
@@ -103,6 +103,33 @@ export class Print {
 
   @Column({ type: 'boolean', default: false })
   isLegalCommander: boolean
+
+  @Column({ type: 'boolean', default: false })
+  isLegalPauper: boolean
+
+  @Column({ type: 'boolean', default: false })
+  isLegalBrawl: boolean
+
+  // Format legality - Pokemon TCG
+  @Column({ type: 'boolean', default: false })
+  isLegalPokemonStandard: boolean
+
+  @Column({ type: 'boolean', default: false })
+  isLegalPokemonExpanded: boolean
+
+  @Column({ type: 'boolean', default: false })
+  isLegalPokemonUnlimited: boolean
+
+  // Format legality - Yu-Gi-Oh!
+  @Column({ type: 'boolean', default: false })
+  isLegalYugiohAdvanced: boolean
+
+  @Column({ type: 'boolean', default: false })
+  isLegalYugiohTraditional: boolean
+
+  // Format legality - One Piece Card Game
+  @Column({ type: 'boolean', default: false })
+  isLegalOnePieceStandard: boolean
 
   // External IDs for price tracking
   @Column({ type: 'varchar', length: 50, nullable: true })
