@@ -60,6 +60,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
   small?: string
   normal?: string
   large?: string
+  original?: string
   artCrop?: string
   borderCrop?: string
 }> {
@@ -110,6 +111,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
                 else if (size === 'small' && !images.small) images.small = publicUrl
                 else if (size === 'normal' && !images.normal) images.normal = publicUrl
                 else if (size === 'large' && !images.large) images.large = publicUrl
+                else if (size === 'original' && !images.original) images.original = publicUrl
                 
               } catch (urlError) {
                 console.warn(`DEBUG: Failed to process MAIN image URL for size ${size}:`, urlError)

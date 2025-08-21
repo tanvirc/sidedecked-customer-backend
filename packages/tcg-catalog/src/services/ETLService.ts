@@ -1451,32 +1451,46 @@ export class ETLService {
       const urlMapping: Record<string, string[]> = {} // Maps unique URL to image types
       
       // Collect all potential image URLs
-      // IMPORTANT: Order matters for deduplication - prioritize full card images first
+      // IMPORTANT: Order matters for deduplication - prioritize HIGHEST QUALITY sources first
       const potentialImages = {
-        normal: images.normal,      // Full card image (priority 1)
-        large: images.large,        // Full card image (priority 2)
-        small: images.small,        // Full card image (priority 3)
+        png: images.png,            // PNG format - highest quality (priority 1)
+        large: images.large,        // Full card image (priority 2) 
+        normal: images.normal,      // Full card image (priority 3)
+        small: images.small,        // Full card image (priority 4)
         artCrop: images.artCrop,    // Artwork only (lower priority)
         borderCrop: images.borderCrop,
         back: images.back
       }
       
-      // Deduplicate by source URL
+      // Option B: Single highest-quality job per print
+      // Process only the FIRST (highest priority) image URL found to eliminate race conditions
+      let selectedImageType: string | null = null
+      let selectedImageUrl: string | null = null
+      
       for (const [imageType, url] of Object.entries(potentialImages)) {
         if (!url) continue
         
-        // Normalize URL (remove query params, fragments for comparison)
-        const normalizedUrl = this.normalizeImageUrl(url)
+        // Use the first (highest priority) image found
+        selectedImageType = imageType
+        selectedImageUrl = url
+        break
+      }
+      
+      if (selectedImageType && selectedImageUrl) {
+        // Create comprehensive mapping - this single job will handle ALL image types
+        const normalizedUrl = this.normalizeImageUrl(selectedImageUrl)
+        imageUrls[selectedImageType] = selectedImageUrl
         
-        if (!uniqueUrls.has(normalizedUrl)) {
-          // First time seeing this URL - use it
-          uniqueUrls.add(normalizedUrl)
-          imageUrls[imageType] = url
-          urlMapping[normalizedUrl] = [imageType]
-        } else {
-          // URL already seen - just track the mapping for database updates
-          urlMapping[normalizedUrl].push(imageType)
-        }
+        // Map this single high-quality source to ALL image types for database updates
+        urlMapping[normalizedUrl] = Object.keys(potentialImages).filter(type => potentialImages[type as keyof typeof potentialImages])
+        
+        logger.info('High-quality image selected for processing', {
+          printId,
+          selectedType: selectedImageType,
+          selectedUrl: selectedImageUrl.substring(selectedImageUrl.lastIndexOf('/') + 1, selectedImageUrl.lastIndexOf('/') + 20) + '...',
+          willRepresent: urlMapping[normalizedUrl],
+          qualityOptimization: 'Using single highest-quality source to eliminate race conditions'
+        })
       }
       
       // Skip if no unique images to process
@@ -1485,16 +1499,17 @@ export class ETLService {
         return
       }
       
-      // Log deduplication results
-      const originalCount = Object.values(potentialImages).filter(url => url).length
-      const uniqueCount = Object.keys(imageUrls).length
+      // Log quality optimization results
+      const availableCount = Object.values(potentialImages).filter(url => url).length
+      const selectedCount = Object.keys(imageUrls).length
       
-      if (originalCount > uniqueCount) {
-        logger.info('Image deduplication applied', {
+      if (availableCount > 1) {
+        logger.info('Quality optimization applied', {
           printId,
-          originalImageCount: originalCount,
-          uniqueImageCount: uniqueCount,
-          duplicatesRemoved: originalCount - uniqueCount,
+          availableImageCount: availableCount,
+          selectedForProcessing: selectedCount,
+          optimizationStrategy: 'Single highest-quality source',
+          eliminatedRaceConditions: availableCount - selectedCount,
           urlMappings: Object.fromEntries(
             Object.entries(urlMapping).map(([url, types]) => [
               url.substring(url.lastIndexOf('/') + 1, url.lastIndexOf('/') + 20) + '...', 
@@ -1524,7 +1539,7 @@ export class ETLService {
         printId,
         jobId: String(job.id),
         uniqueImageCount: Object.keys(imageUrls).length,
-        totalImageTypes: originalCount
+        totalImageTypes: availableCount
       })
       
     } catch (error) {

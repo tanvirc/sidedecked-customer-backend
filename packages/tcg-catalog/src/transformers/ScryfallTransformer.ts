@@ -37,6 +37,7 @@ interface ScryfallCard {
     penny?: string
   }
   image_uris?: {
+    png?: string
     small?: string
     normal?: string
     large?: string
@@ -272,12 +273,13 @@ export class ScryfallTransformer {
       },
 
       // Images - Map Scryfall image types to our universal format
-      // IMPORTANT: small/normal/large = full card images
+      // IMPORTANT: PNG is highest quality, then large/normal/small = full card images
       // NOTE: artCrop (art_crop) intentionally excluded to prevent storage overwrites
       images: scryfallCard.image_uris ? {
-        small: scryfallCard.image_uris.small,      // Full card, small size
-        normal: scryfallCard.image_uris.normal,    // Full card, normal size  
-        large: scryfallCard.image_uris.large       // Full card, large size
+        png: scryfallCard.image_uris.png,          // Full card, highest quality PNG (745×1040)
+        small: scryfallCard.image_uris.small,      // Full card, small size (146×204)
+        normal: scryfallCard.image_uris.normal,    // Full card, normal size (488×680)
+        large: scryfallCard.image_uris.large       // Full card, large size (672×936)
       } : undefined,
 
       // Prices

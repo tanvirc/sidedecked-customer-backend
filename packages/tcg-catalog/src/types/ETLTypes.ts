@@ -124,6 +124,7 @@ export interface UniversalPrint {
 
   // Images
   images?: {
+    png?: string
     small?: string
     normal?: string
     large?: string
