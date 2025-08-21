@@ -4,8 +4,13 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  DeleteDateColumn
+  DeleteDateColumn,
+  OneToMany,
+  ManyToOne,
+  JoinColumn
 } from 'typeorm'
+import { DeckCard } from './DeckCard'
+import { Game } from './Game'
 
 @Entity('decks')
 export class Deck {
@@ -23,6 +28,13 @@ export class Deck {
 
   @Column({ type: 'uuid', nullable: true })
   formatId: string
+
+  @ManyToOne(() => Game, { eager: false })
+  @JoinColumn({ name: 'gameId' })
+  game: Game
+
+  @OneToMany(() => DeckCard, deckCard => deckCard.deck, { cascade: true })
+  cards: DeckCard[]
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date

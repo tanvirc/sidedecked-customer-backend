@@ -4,6 +4,8 @@ import catalogRoutes from './catalog'
 import wishlistRoutes from './wishlist'
 import pricingRoutes from './pricing'
 import sellersRoutes from './sellers'
+import deckRoutes from './decks'
+import collectionRoutes from './collections'
 
 export const setupRoutes = (): Router => {
   const router = Router()
@@ -19,6 +21,7 @@ export const setupRoutes = (): Router => {
         catalog: '/api/catalog',
         wishlists: '/api/wishlists',
         decks: '/api/decks',
+        collections: '/api/collections',
         community: '/api/community',
         pricing: '/api/pricing',
         commerce: '/api/commerce',
@@ -42,8 +45,13 @@ export const setupRoutes = (): Router => {
   // Seller routes
   router.use('/sellers', sellersRoutes)
 
+  // Deck routes
+  router.use('/decks', deckRoutes)
+
+  // Collection routes
+  router.use('/collections', collectionRoutes)
+
   // TODO: Add remaining route modules
-  // router.use('/decks', deckRoutes)
   // router.use('/community', communityRoutes)
   // router.use('/admin', adminRoutes)
 
