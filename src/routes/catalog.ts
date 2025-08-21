@@ -386,14 +386,19 @@ router.get('/cards/search', async (req, res) => {
             id: print.id,
             rarity: print.rarity,
             artist: print.artist,
-            collectorNumber: print.collectorNumber,
+            number: print.collectorNumber,
             language: print.language,
+            finish: print.finish,
+            variation: print.variation,
+            frame: print.frame,
+            borderColor: print.borderColor,
             blurhash: print.blurhash,
             images: processedImages,
             set: print.set ? {
               id: print.set.id,
               code: print.set.code,
-              name: print.set.name
+              name: print.set.name,
+              releaseDate: print.set.releaseDate
             } : null
           }] : []
         },
@@ -510,14 +515,19 @@ router.get('/cards/:id', async (req, res) => {
         id: print.id,
         rarity: print.rarity,
         artist: print.artist,
-        collectorNumber: print.collectorNumber,
+        number: print.collectorNumber,
         language: print.language,
+        finish: print.finish,
+        variation: print.variation,
+        frame: print.frame,
+        borderColor: print.borderColor,
         blurhash: print.blurhash,
         images: await getProcessedImageUrls(print),
         set: print.set ? {
           id: print.set.id,
           code: print.set.code,
-          name: print.set.name
+          name: print.set.name,
+          releaseDate: print.set.releaseDate
         } : null
       })) || [])
     }
@@ -609,8 +619,12 @@ router.get('/cards/:id/details', async (req, res) => {
         id: print.id,
         rarity: print.rarity,
         artist: print.artist,
-        collectorNumber: print.collectorNumber,
+        number: print.collectorNumber,
         language: print.language,
+        finish: print.finish,
+        variation: print.variation,
+        frame: print.frame,
+        borderColor: print.borderColor,
         isLegalStandard: print.isLegalStandard,
         isLegalPioneer: print.isLegalPioneer,
         isLegalModern: print.isLegalModern,
@@ -626,7 +640,8 @@ router.get('/cards/:id/details', async (req, res) => {
         set: print.set ? {
           id: print.set.id,
           code: print.set.code,
-          name: print.set.name
+          name: print.set.name,
+          releaseDate: print.set.releaseDate
         } : null
       })) || []),
       // Add format legality (from first print)

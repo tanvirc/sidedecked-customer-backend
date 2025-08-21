@@ -995,11 +995,29 @@ export class ETLService {
       return existingSet
     }
 
+    // Fetch release date from Scryfall for MTG sets
+    let releaseDate: Date | null = null
+    if (card.game.code === 'MTG') {
+      try {
+        const setResponse = await fetch(`https://api.scryfall.com/sets/${setCode.toLowerCase()}`)
+        if (setResponse.ok) {
+          const setData = await setResponse.json() as any
+          if (setData.released_at) {
+            releaseDate = new Date(setData.released_at)
+          }
+        }
+      } catch (error) {
+        logger.debug('Failed to fetch set release date from Scryfall', { setCode, error })
+        // Continue without release date
+      }
+    }
+
     // Create new set
     const newSet = manager.create(CardSet, {
       gameId: card.gameId,
       code: setCode,
       name: setName,
+      releaseDate: releaseDate,
       setType: 'expansion', // Default, can be enhanced later
       cardCount: 0,
       isDigitalOnly: false,
