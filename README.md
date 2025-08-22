@@ -142,16 +142,55 @@ The customer-backend uses the `sidedecked-db` database with the following main e
 - `market_prices` - Current market pricing
 - `price_alerts` - User price notifications
 
-## Inventory Sync Service
+## Services Architecture
 
-The **InventorySyncService** provides real-time inventory synchronization between customer-backend and the Medusa commerce backend, maintaining the split-brain architecture while enabling accurate inventory data.
+### Core Services
 
-### Features
+#### InventorySyncService
+Real-time inventory synchronization between customer-backend and the Medusa commerce backend.
+
+**Features:**
 - **Real-time Inventory Checks** - Query current product availability
 - **Intelligent Caching** - Redis-based caching with configurable TTL
 - **Circuit Breaker Pattern** - Resilient API calls with fallback mechanisms  
 - **Batch Operations** - Efficient bulk inventory queries
 - **Health Monitoring** - Comprehensive service monitoring and alerts
+
+#### MedusaAuthService  
+Cross-system authentication integration with the commerce backend.
+
+**Features:**
+- **Session Validation** - Verify customer sessions across systems
+- **Token Exchange** - Convert between authentication formats
+- **User Context** - Maintain user state across API calls
+- **Permission Mapping** - Handle role-based access control
+
+#### TrustScoreService
+Seller reputation and trust scoring system.
+
+**Features:**
+- **Rating Aggregation** - Calculate composite trust scores
+- **Performance Metrics** - Track seller KPIs and behavior
+- **Risk Assessment** - Identify potential problematic sellers
+- **Trust Badges** - Award verification badges and achievements
+
+#### PriceAlertService  
+Real-time price monitoring and notification system.
+
+**Features:**
+- **Price Tracking** - Monitor card price changes across markets
+- **Alert Triggers** - Configurable price thresholds and conditions
+- **Notification Delivery** - Email/SMS alert distribution
+- **Historical Analysis** - Price trend analysis and predictions
+
+#### SellerReviewService
+Comprehensive seller review and feedback management.
+
+**Features:**
+- **Review Collection** - Gather customer feedback post-purchase
+- **Sentiment Analysis** - Automated review sentiment scoring
+- **Response Management** - Enable seller responses to reviews
+- **Moderation Tools** - Content filtering and quality control
 
 ### Authentication Setup
 
@@ -173,20 +212,33 @@ COMMERCE_BACKEND_URL=http://localhost:9000  # or production URL
 
 ```typescript
 import { InventorySyncService } from './services/InventorySyncService'
+import { TrustScoreService } from './services/TrustScoreService'
+import { PriceAlertService } from './services/PriceAlertService'
 
+// Inventory Management
 const inventorySync = new InventorySyncService()
-
-// Check single product availability
 const result = await inventorySync.checkInventory('variant_123')
-console.log(result.available, result.quantity)
+const batchResults = await inventorySync.checkMultipleInventory(['var_1', 'var_2'])
 
-// Batch inventory check  
-const variants = ['var_1', 'var_2', 'var_3']
-const results = await inventorySync.checkMultipleInventory(variants)
+// Trust Scoring
+const trustScore = new TrustScoreService()
+const sellerScore = await trustScore.calculateTrustScore('seller_123')
+const badges = await trustScore.getSellerBadges('seller_123')
 
-// Health check
-const health = await inventorySync.healthCheck()
-console.log('API accessible:', health.api_accessible)
+// Price Monitoring
+const priceAlert = new PriceAlertService()
+await priceAlert.createAlert('card_123', { maxPrice: 25.00, userId: 'user_456' })
+const alerts = await priceAlert.checkAlerts()
+
+// Authentication Integration
+const auth = new MedusaAuthService()
+const session = await auth.validateSession(sessionToken)
+const userContext = await auth.getUserContext(userId)
+
+// Review Management
+const reviews = new SellerReviewService()
+const sellerReviews = await reviews.getSellerReviews('seller_123')
+await reviews.submitReview(orderId, { rating: 5, comment: 'Great service!' })
 ```
 
 ### Production Deployment
@@ -251,14 +303,26 @@ See `.env.template` for all required environment variables. Key configurations:
 - **COMMERCE_PUBLISHABLE_KEY** - Medusa publishable API key (pk_xxxxx) - **REQUIRED**
 
 ### External APIs
-- **SCRYFALL_API_URL** - Magic: The Gathering card data
-- **POKEMON_TCG_API_KEY** - Pokemon TCG API access
-- **YUGIOH_API_URL** - YuGiOh card database
+- **SCRYFALL_API_URL** - Magic: The Gathering card data (https://api.scryfall.com)
+- **POKEMON_TCG_API_KEY** - Pokemon TCG API access (requires registration)
+- **POKEMON_TCG_API_URL** - Pokemon API endpoint (https://api.pokemontcg.io/v2)
+- **YUGIOH_API_URL** - YuGiOh card database (https://db.ygoprodeck.com/api/v7)
 - **ONEPIECE_API_URL** - One Piece card game data
 
-### Storage & Search  
-- **MINIO_ENDPOINT** - Image storage configuration
-- **ALGOLIA_APP_ID** - Search engine configuration
+### Storage & Processing
+- **MINIO_ENDPOINT** - S3-compatible image storage 
+- **MINIO_ACCESS_KEY** - MinIO access credentials
+- **MINIO_SECRET_KEY** - MinIO secret credentials
+- **MINIO_BUCKET** - Storage bucket name (sidedecked-card-images)
+
+### Search & Analytics
+- **ALGOLIA_APP_ID** - Search engine application ID
+- **ALGOLIA_API_KEY** - Search API key for indexing
+
+### Notification Services
+- **RESEND_API_KEY** - Email service for price alerts and notifications
+- **TWILIO_ACCOUNT_SID** - SMS notifications (optional)
+- **TWILIO_AUTH_TOKEN** - SMS authentication token
 
 **Note**: Without `COMMERCE_PUBLISHABLE_KEY`, the inventory sync service will operate in fallback mode with limited functionality.
 
@@ -316,4 +380,36 @@ npm run migration:show
 
 # Verify environment variables
 echo $DATABASE_URL
+
+# Test specific services
+npm run test:services
 ```
+
+### Service Integration Issues
+
+#### Commerce Backend Connection
+```bash
+# Test inventory sync service
+curl http://localhost:7000/api/inventory/health
+
+# Check publishable API key
+echo $COMMERCE_PUBLISHABLE_KEY
+
+# Verify backend accessibility
+curl http://localhost:9000/health
+```
+
+#### Authentication Service Issues
+- Ensure MedusaAuthService can reach commerce backend
+- Check session token format and expiration
+- Verify CORS settings between services
+
+#### Trust Score Calculation Errors  
+- Check that seller data exists in commerce backend
+- Verify review aggregation queries
+- Ensure rating calculations handle edge cases
+
+#### Price Alert Service Problems
+- Confirm external API connectivity (Scryfall, Pokemon, etc.)
+- Check Redis cache for price data storage
+- Verify notification service credentials (Resend, Twilio)
