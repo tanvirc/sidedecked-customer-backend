@@ -283,8 +283,20 @@ export const checkRedisHealth = async (): Promise<{ healthy: boolean; error?: st
 
 export const checkStorageHealth = async (): Promise<{ healthy: boolean; error?: string }> => {
   try {
+    if (!config.MINIO_ENDPOINT || !config.MINIO_ACCESS_KEY || !config.MINIO_SECRET_KEY) {
+      return { healthy: false, error: 'Storage configuration incomplete' }
+    }
+    
     const storage = getStorageService()
-    await storage.ensureBucket()
+    
+    // Add timeout to storage health check
+    await Promise.race([
+      storage.ensureBucket(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Storage health check timeout')), 5000)
+      )
+    ])
+    
     return { healthy: true }
   } catch (error) {
     return { healthy: false, error: (error as Error).message }
@@ -350,25 +362,35 @@ export const initializeInfrastructure = async (): Promise<void> => {
     await redis.ping()
     logger.info('Redis initialized')
 
-    // Initialize storage with timeout and non-blocking approach
-    try {
-      // Set a shorter timeout for storage initialization to avoid blocking startup
-      const storage = getStorageService()
-      const storageInitPromise = storage.ensureBucket()
+    // Initialize storage with timeout and completely non-blocking approach
+    if (config.MINIO_ENDPOINT && config.MINIO_ACCESS_KEY && config.MINIO_SECRET_KEY) {
+      // Start storage initialization in background - don't wait for it
+      const initializeStorageAsync = async () => {
+        try {
+          // Set a shorter timeout for storage initialization
+          const storage = getStorageService()
+          const storageInitPromise = storage.ensureBucket()
+          
+          // Use Promise.race to implement a timeout
+          await Promise.race([
+            storageInitPromise,
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Storage initialization timeout after 15 seconds')), 15000)
+            )
+          ])
+          
+          logger.info('Storage initialized successfully (background)')
+        } catch (error) {
+          logger.error('Storage initialization failed (background)', error as Error)
+          logger.warn('Server will continue without storage - images may not load until storage is available')
+        }
+      }
       
-      // Use Promise.race to implement a timeout
-      await Promise.race([
-        storageInitPromise,
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Storage initialization timeout')), 10000)
-        )
-      ])
-      
-      logger.info('Storage initialized')
-    } catch (error) {
-      // Don't block server startup if storage is unavailable
-      logger.warn('Storage initialization failed (will retry on first use)', error as Error)
-      logger.warn('Server will continue without storage - images may not load until storage is available')
+      // Start in background without blocking
+      initializeStorageAsync()
+      logger.info('Storage initialization started in background')
+    } else {
+      logger.warn('Storage configuration incomplete - skipping MinIO initialization')
     }
 
     // Initialize Algolia (connection is lazy)
