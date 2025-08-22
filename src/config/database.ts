@@ -27,6 +27,7 @@ import { PriceAlert } from '../entities/PriceAlert'
 import { PricePrediction } from '../entities/PricePrediction'
 import { Wishlist } from '../entities/Wishlist'
 import { WishlistItem } from '../entities/WishlistItem'
+import { SellerRating } from '../entities/SellerRating'
 // Note: Portfolio entities are part of the pricing intelligence module (future implementation)
 // import { Portfolio } from '../entities/Portfolio'
 // import { PortfolioHolding } from '../entities/PortfolioHolding'
@@ -80,7 +81,10 @@ export const AppDataSource = new DataSource({
     
     // Wishlist
     Wishlist,
-    WishlistItem
+    WishlistItem,
+    
+    // Seller Management
+    SellerRating
     // Portfolio entities will be added in pricing intelligence module
     // Portfolio,
     // PortfolioHolding,
