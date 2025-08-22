@@ -6,6 +6,7 @@ import pricingRoutes from './pricing'
 import sellersRoutes from './sellers'
 import deckRoutes from './decks'
 import collectionRoutes from './collections'
+import errorRoutes from './errors'
 
 export const setupRoutes = (): Router => {
   const router = Router()
@@ -25,6 +26,7 @@ export const setupRoutes = (): Router => {
         community: '/api/community',
         pricing: '/api/pricing',
         commerce: '/api/commerce',
+        errors: '/api/errors',
         admin: '/api/admin'
       }
     })
@@ -50,6 +52,9 @@ export const setupRoutes = (): Router => {
 
   // Collection routes
   router.use('/collections', collectionRoutes)
+
+  // Error reporting routes
+  router.use('/errors', errorRoutes)
 
   // TODO: Add remaining route modules
   // router.use('/community', communityRoutes)

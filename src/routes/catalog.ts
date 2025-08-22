@@ -190,17 +190,19 @@ async function getProcessedImageUrls(print: Print): Promise<{
     return images
     
   } catch (error) {
-    console.warn('Error getting processed image URLs for print', print.id, ':', error)
+    console.warn('Error getting processed image URLs for print', print.id, ':', error?.toString?.()?.substring(0, 200))
+    
     // Always fallback to external URLs on error - this ensures mobile compatibility
     const fallbackImages = {
-      thumbnail: print.imageSmall || undefined,
-      small: print.imageSmall || undefined,
-      normal: print.imageNormal || undefined,
-      large: print.imageLarge || undefined,
+      thumbnail: print.imageSmall || '/images/card-placeholder.png',
+      small: print.imageSmall || '/images/card-placeholder.png',
+      normal: print.imageNormal || '/images/card-placeholder.png', 
+      large: print.imageLarge || print.imageNormal || '/images/card-placeholder.png',
       artCrop: print.imageArtCrop || undefined,
       borderCrop: print.imageBorderCrop || undefined
     }
-    debugLog('Using fallback images for print', print.id, ':', fallbackImages)
+    
+    debugLog('Using fallback images for print', print.id)
     return fallbackImages
   }
 }
@@ -304,6 +306,8 @@ router.get('/games/code/:code', async (req, res) => {
 // Search cards
 router.get('/cards/search', async (req, res) => {
   try {
+    debugLog('Search request received:', req.query)
+
     const {
       q: query = '',
       games,
@@ -319,11 +323,32 @@ router.get('/cards/search', async (req, res) => {
       sort = 'relevance'
     } = req.query
 
-    const pageNum = parseInt(page as string)
-    const limitNum = parseInt(limit as string)
+    // Validate and sanitize inputs
+    const pageNum = Math.max(1, parseInt(page as string) || 1)
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20)) // Cap at 100
     const offset = (pageNum - 1) * limitNum
 
-    debugLog('Searching cards with filters:', { games, types, query, page, limit })
+    debugLog('Searching cards with validated params:', { 
+      query: query?.toString()?.substring(0, 100), 
+      games, 
+      types, 
+      pageNum, 
+      limitNum,
+      offset 
+    })
+
+    // Check database connection first
+    if (!AppDataSource.isInitialized) {
+      debugLog('Database not initialized')
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'DATABASE_NOT_INITIALIZED',
+          message: 'Database connection not available',
+          timestamp: new Date().toISOString()
+        }
+      })
+    }
 
     // Use TypeORM to get cards with relations for proper image handling
     const cardRepository = AppDataSource.getRepository(Card)
@@ -351,77 +376,156 @@ router.get('/cards/search', async (req, res) => {
     // Add ordering
     queryBuilder.orderBy('card.name', 'ASC')
 
-    // Get total count first
-    const totalCount = await queryBuilder.getCount()
+    let totalCount = 0
+    let cards: Card[] = []
 
-    // Apply pagination
-    queryBuilder.skip(offset).take(limitNum)
+    try {
+      // Get total count first with timeout
+      debugLog('Getting total count...')
+      totalCount = await Promise.race([
+        queryBuilder.getCount(),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Count query timeout')), 10000)
+        )
+      ])
+      debugLog('Total count:', totalCount)
 
-    const cards = await queryBuilder.getMany()
+      // Apply pagination
+      queryBuilder.skip(offset).take(limitNum)
 
-    debugLog('Found cards:', cards.length, 'Total:', totalCount)
+      // Get cards with timeout
+      debugLog('Getting cards...')
+      cards = await Promise.race([
+        queryBuilder.getMany(),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Cards query timeout')), 15000)
+        )
+      ])
+      debugLog('Found cards:', cards.length)
+
+    } catch (dbError) {
+      console.error('Database query failed:', dbError)
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'DATABASE_QUERY_FAILED',
+          message: 'Search query failed',
+          details: process.env.NODE_ENV === 'development' ? (dbError as Error).message : undefined,
+          timestamp: new Date().toISOString()
+        }
+      })
+    }
 
     // Convert to search results format with proper image data
-    const hits = await Promise.all(cards.map(async (card) => {
-      // Get the first print with images
-      const print = card.prints?.[0]
-      let processedImages = {}
-      
-      if (print) {
-        processedImages = await getProcessedImageUrls(print)
-      }
+    debugLog('Processing results...')
+    let hits: any[] = []
 
-      return {
-        card: {
-          id: card.id,
-          name: card.name,
-          gameId: card.gameId,
-          gameCode: card.game?.code,
-          gameName: card.game?.name,
-          oracleText: card.oracleText,
-          flavorText: card.flavorText,
-          manaCost: card.manaCost,
-          manaValue: card.manaValue,
-          colors: card.colors,
-          powerValue: card.powerValue,
-          defenseValue: card.defenseValue,
-          hp: card.hp,
-          primaryType: card.primaryType,
-          subtypes: card.subtypes,
-          game: card.game ? {
-            id: card.game.id,
-            code: card.game.code,
-            name: card.game.name
-          } : null,
-          // Include prints with image data for frontend compatibility
-          prints: print ? [{
-            id: print.id,
-            rarity: print.rarity,
-            artist: print.artist,
-            number: print.collectorNumber,
-            language: print.language,
-            finish: print.finish,
-            variation: print.variation,
-            frame: print.frame,
-            borderColor: print.borderColor,
-            blurhash: print.blurhash,
-            images: processedImages,
-            set: print.set ? {
-              id: print.set.id,
-              code: print.set.code,
-              name: print.set.name,
-              releaseDate: print.set.releaseDate
-            } : null
-          }] : []
-        },
-        print: print ? {
-          id: print.id,
-          rarity: print.rarity,
-          images: processedImages
-        } : null,
-        relevanceScore: 1.0
-      }
-    }))
+    try {
+      hits = await Promise.all(cards.map(async (card, index) => {
+        try {
+          // Get the first print with images
+          const print = card.prints?.[0]
+          let processedImages = {}
+          
+          if (print) {
+            // Add timeout and error handling for image processing
+            try {
+              processedImages = await Promise.race([
+                getProcessedImageUrls(print),
+                new Promise<{}>((resolve) => 
+                  setTimeout(() => resolve({}), 5000)
+                )
+              ])
+            } catch (imageError) {
+              debugLog(`Image processing failed for card ${card.id}:`, imageError)
+              processedImages = {}
+            }
+          }
+
+          return {
+            card: {
+              id: card.id,
+              name: card.name,
+              gameId: card.gameId,
+              gameCode: card.game?.code,
+              gameName: card.game?.name,
+              oracleText: card.oracleText,
+              flavorText: card.flavorText,
+              manaCost: card.manaCost,
+              manaValue: card.manaValue,
+              colors: card.colors,
+              powerValue: card.powerValue,
+              defenseValue: card.defenseValue,
+              hp: card.hp,
+              primaryType: card.primaryType,
+              subtypes: card.subtypes,
+              game: card.game ? {
+                id: card.game.id,
+                code: card.game.code,
+                name: card.game.name
+              } : null,
+              // Include prints with image data for frontend compatibility
+              prints: print ? [{
+                id: print.id,
+                rarity: print.rarity,
+                artist: print.artist,
+                number: print.collectorNumber,
+                language: print.language,
+                finish: print.finish,
+                variation: print.variation,
+                frame: print.frame,
+                borderColor: print.borderColor,
+                blurhash: print.blurhash,
+                images: processedImages,
+                set: print.set ? {
+                  id: print.set.id,
+                  code: print.set.code,
+                  name: print.set.name,
+                  releaseDate: print.set.releaseDate
+                } : null
+              }] : []
+            },
+            print: print ? {
+              id: print.id,
+              rarity: print.rarity,
+              images: processedImages
+            } : null,
+            relevanceScore: 1.0
+          }
+        } catch (cardError) {
+          console.error(`Error processing card ${card.id}:`, cardError)
+          // Return minimal card data on error
+          return {
+            card: {
+              id: card.id,
+              name: card.name,
+              gameId: card.gameId,
+              gameCode: card.game?.code,
+              gameName: card.game?.name,
+              primaryType: card.primaryType,
+              game: card.game ? {
+                id: card.game.id,
+                code: card.game.code,
+                name: card.game.name
+              } : null,
+              prints: []
+            },
+            print: null,
+            relevanceScore: 1.0
+          }
+        }
+      }))
+    } catch (processingError) {
+      console.error('Error processing search results:', processingError)
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'RESULT_PROCESSING_FAILED',
+          message: 'Failed to process search results',
+          timestamp: new Date().toISOString()
+        }
+      })
+    }
 
     // Return search response directly for frontend compatibility
     res.json({
@@ -445,17 +549,33 @@ router.get('/cards/search', async (req, res) => {
       processingTime: Date.now(),
       searchId: `search_${Date.now()}`
     })
+
+    debugLog('Search completed successfully:', { 
+      hitCount: hits.length, 
+      totalCount, 
+      page: pageNum 
+    })
+
   } catch (error) {
-    console.error('Error searching cards:', error)
+    console.error('Unexpected error in card search:', error)
     console.error('Error stack:', (error as Error).stack)
-    res.status(500).json({
+    console.error('Request query:', req.query)
+
+    // Return detailed error in development, generic in production
+    const errorResponse = {
       success: false,
       error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Failed to search cards',
-        timestamp: new Date().toISOString()
+        code: 'SEARCH_ERROR',
+        message: 'An unexpected error occurred while searching cards',
+        timestamp: new Date().toISOString(),
+        ...(process.env.NODE_ENV === 'development' && {
+          details: (error as Error).message,
+          stack: (error as Error).stack?.split('\n').slice(0, 5) // First 5 lines only
+        })
       }
-    })
+    }
+
+    res.status(500).json(errorResponse)
   }
 })
 
