@@ -4,6 +4,7 @@ import catalogRoutes from './catalog'
 import wishlistRoutes from './wishlist'
 import pricingRoutes from './pricing'
 import sellersRoutes from './sellers'
+import customersRoutes from './customers'
 import deckRoutes from './decks'
 import collectionRoutes from './collections'
 import errorRoutes from './errors'
@@ -26,6 +27,8 @@ export const setupRoutes = (): Router => {
         community: '/api/community',
         pricing: '/api/pricing',
         commerce: '/api/commerce',
+        customers: '/api/customers',
+        sellers: '/api/sellers',
         errors: '/api/errors',
         admin: '/api/admin'
       }
@@ -46,6 +49,9 @@ export const setupRoutes = (): Router => {
 
   // Seller routes
   router.use('/sellers', sellersRoutes)
+
+  // Customer routes
+  router.use('/customers', customersRoutes)
 
   // Deck routes
   router.use('/decks', deckRoutes)
