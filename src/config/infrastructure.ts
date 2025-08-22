@@ -73,7 +73,8 @@ export const getMinioClient = (): MinioClient => {
       secretKey: config.MINIO_SECRET_KEY || '',
       transportAgent: config.NODE_ENV === 'production' ? undefined : undefined,
       sessionToken: undefined,
-      pathStyle: false
+      pathStyle: true, // Use path-style for Railway MinIO
+      region: config.MINIO_REGION || 'us-east-1'
     })
 
     logger.info('MinIO client initialized', {
@@ -97,6 +98,16 @@ export const getStorageService = () => {
       const bucketName = config.MINIO_BUCKET
       
       try {
+        // First check if we can list buckets (basic connectivity test)
+        try {
+          await client.listBuckets()
+          logger.debug('MinIO connection successful')
+        } catch (connectError) {
+          logger.warn('MinIO connection test failed, continuing anyway', { error: (connectError as Error).message })
+          // Don't throw here - allow the service to start without storage
+          return
+        }
+        
         const exists = await client.bucketExists(bucketName)
         
         if (!exists) {
@@ -117,10 +128,13 @@ export const getStorageService = () => {
           
           await client.setBucketPolicy(bucketName, JSON.stringify(policy))
           logger.info('MinIO bucket created with public read access', { bucketName })
+        } else {
+          logger.info('MinIO bucket already exists', { bucketName })
         }
       } catch (error) {
         logger.error('Failed to ensure bucket exists', error as Error, { bucketName })
-        throw error
+        // Don't throw - allow service to continue without storage
+        logger.warn('Service will continue without storage functionality')
       }
     },
     
@@ -367,15 +381,15 @@ export const initializeInfrastructure = async (): Promise<void> => {
       // Start storage initialization in background - don't wait for it
       const initializeStorageAsync = async () => {
         try {
-          // Set a shorter timeout for storage initialization
+          // Set a longer timeout for Railway environment (30 seconds)
           const storage = getStorageService()
           const storageInitPromise = storage.ensureBucket()
           
-          // Use Promise.race to implement a timeout
+          // Use Promise.race to implement a timeout - increased to 30 seconds for Railway
           await Promise.race([
             storageInitPromise,
             new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Storage initialization timeout after 15 seconds')), 15000)
+              setTimeout(() => reject(new Error('Storage initialization timeout after 30 seconds')), 30000)
             )
           ])
           
@@ -383,6 +397,14 @@ export const initializeInfrastructure = async (): Promise<void> => {
         } catch (error) {
           logger.error('Storage initialization failed (background)', error as Error)
           logger.warn('Server will continue without storage - images may not load until storage is available')
+          
+          // Retry storage initialization after a delay if it fails
+          setTimeout(() => {
+            logger.info('Retrying storage initialization...')
+            initializeStorageAsync().catch(err => {
+              logger.error('Storage retry failed', err as Error)
+            })
+          }, 60000) // Retry after 1 minute
         }
       }
       
