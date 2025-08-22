@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { logger } from '../config/logger'
 import { config } from '../config/env'
+import { debugInfo } from '../utils/debug'
 
 interface AuthTokens {
   token: string
@@ -139,7 +140,7 @@ export class MedusaAuthService {
           password
         })
       } catch (adminError) {
-        logger.debug('Admin auth failed, trying user auth', { error: (adminError as Error).message })
+        debugInfo('Admin auth failed, trying user auth', { error: (adminError as Error).message })
         
         // Fallback to user auth endpoint
         response = await this.httpClient.post<LoginResponse>('/auth/user/emailpass', {

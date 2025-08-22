@@ -13,6 +13,7 @@ import { setupRoutes } from './routes'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler'
 import { requestLogger } from './middleware/requestLogger'
 import { jobScheduler } from './services/JobScheduler'
+import { debugStartup, conditionalExecAsync } from './utils/debug'
 
 async function createApp(): Promise<express.Application> {
   const app = express()
@@ -111,28 +112,30 @@ async function startServer(): Promise<void> {
     await initializeDatabase(10) // Increased retries for cold starts
     console.log('✅ Database initialized')
     
-    // Debug: Check if pricing tables exist
-    const { AppDataSource } = await import('./config/database')
-    try {
-      const tableCheck = await AppDataSource.query(`
-        SELECT table_name FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_name IN ('market_prices', 'price_history')
-        ORDER BY table_name
-      `)
-      console.log('🔍 Pricing tables check:', tableCheck.map((t: any) => t.table_name))
-      
-      if (tableCheck.length === 0) {
-        console.log('❌ No pricing tables found - this explains the errors')
-      } else {
-        console.log('✅ Pricing tables exist, checking for data...')
-        const marketPriceCount = await AppDataSource.query('SELECT COUNT(*) FROM market_prices')
-        const priceHistoryCount = await AppDataSource.query('SELECT COUNT(*) FROM price_history')
-        console.log(`📊 market_prices: ${marketPriceCount[0].count} rows`)
-        console.log(`📊 price_history: ${priceHistoryCount[0].count} rows`)
+    // Debug: Check if pricing tables exist (only if startup debugging enabled)
+    await conditionalExecAsync('startup', async () => {
+      const { AppDataSource } = await import('./config/database')
+      try {
+        const tableCheck = await AppDataSource.query(`
+          SELECT table_name FROM information_schema.tables 
+          WHERE table_schema = 'public' AND table_name IN ('market_prices', 'price_history')
+          ORDER BY table_name
+        `)
+        debugStartup('Pricing tables check', tableCheck.map((t: any) => t.table_name))
+        
+        if (tableCheck.length === 0) {
+          debugStartup('No pricing tables found - this explains the errors')
+        } else {
+          debugStartup('Pricing tables exist, checking for data...')
+          const marketPriceCount = await AppDataSource.query('SELECT COUNT(*) FROM market_prices')
+          const priceHistoryCount = await AppDataSource.query('SELECT COUNT(*) FROM price_history')
+          debugStartup(`market_prices: ${marketPriceCount[0].count} rows`)
+          debugStartup(`price_history: ${priceHistoryCount[0].count} rows`)
+        }
+      } catch (error) {
+        debugStartup('Debug table check failed', (error as Error).message)
       }
-    } catch (error) {
-      console.log('❌ Debug table check failed:', (error as Error).message)
-    }
+    })
 
     // Initialize infrastructure (Redis, Algolia, etc.)
     await initializeInfrastructure()

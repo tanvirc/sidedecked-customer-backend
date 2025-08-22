@@ -3,6 +3,7 @@ import CircuitBreaker from 'opossum'
 import { getRedisClient } from '../config/infrastructure'
 import { logger } from '../config/logger'
 import { config } from '../config/env'
+import { debugInfo } from '../utils/debug'
 import type Redis from 'ioredis'
 
 // Extend axios config to include metadata
@@ -125,7 +126,7 @@ export class InventorySyncService {
         this.totalResponseTime += responseTime
         this.successCount++
         
-        logger.debug('Medusa API success', {
+        debugInfo('Medusa API success', {
           url: response.config.url,
           method: response.config.method,
           status: response.status,
@@ -200,7 +201,7 @@ export class InventorySyncService {
       if (useCache) {
         const cachedResult = await this.getCachedInventory(cacheKey)
         if (cachedResult) {
-          logger.debug('Inventory cache hit', { variantId })
+          debugInfo('Inventory cache hit', { variantId })
           return cachedResult
         }
       }
@@ -215,7 +216,7 @@ export class InventorySyncService {
         await this.cacheInventoryResult(cacheKey, result, this.cacheTTL)
       }
 
-      logger.debug('Inventory fetched from API', { 
+      debugInfo('Inventory fetched from API', { 
         variantId, 
         available: result.available, 
         quantity: result.quantity 
@@ -272,7 +273,7 @@ export class InventorySyncService {
                 ...parsed,
                 last_checked: new Date(parsed.last_checked)
               })
-              logger.debug('Batch inventory cache hit', { variantId })
+              debugInfo('Batch inventory cache hit', { variantId })
             } catch (parseError) {
               logger.error('Error parsing cached inventory', parseError as Error, { variantId })
               uncachedVariants.push(variantId)

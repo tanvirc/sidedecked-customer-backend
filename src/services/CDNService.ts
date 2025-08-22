@@ -7,6 +7,7 @@
 
 import { config } from '../config/env'
 import { logger } from '../../packages/tcg-catalog/src/utils/Logger'
+import { debugInfo } from '../utils/debug'
 
 export interface CDNOptions {
   enableCache?: boolean
@@ -48,7 +49,7 @@ export class CDNService {
    */
   generateImageUrl(imagePath: string, options: CDNOptions = {}): string {
     if (!this.enabled || !this.baseUrl) {
-      logger.debug('CDN disabled or no base URL configured, returning original path')
+      debugInfo('CDN disabled or no base URL configured, returning original path')
       return imagePath
     }
 
@@ -78,7 +79,7 @@ export class CDNService {
         cdnUrl += `?${params.toString()}`
       }
       
-      logger.debug('Generated CDN URL', { 
+      debugInfo('Generated CDN URL', { 
         original: imagePath, 
         cdn: cdnUrl,
         options 
@@ -176,7 +177,7 @@ export class CDNService {
       if (originalUrl.includes('cdn.sidedecked.com')) {
         const convertedUrl = this.convertCdnToMinioUrl(originalUrl)
         if (convertedUrl) {
-          logger.debug('CDN disabled: converted CDN URL to MinIO URL', { 
+          debugInfo('CDN disabled: converted CDN URL to MinIO URL', { 
             original: originalUrl, 
             converted: convertedUrl 
           })
@@ -186,13 +187,13 @@ export class CDNService {
       
       // If already a MinIO URL, use it directly
       if (originalUrl.includes('bucket-production') || originalUrl.includes('sidedecked-card-images')) {
-        logger.debug('CDN disabled: using MinIO URL directly', { url: originalUrl })
+        debugInfo('CDN disabled: using MinIO URL directly', { url: originalUrl })
         return originalUrl
       }
       
       // Use provided MinIO URL as fallback
       if (minioUrl && (minioUrl.includes('bucket-production') || minioUrl.includes('sidedecked-card-images'))) {
-        logger.debug('CDN disabled: using fallback MinIO URL', { url: minioUrl })
+        debugInfo('CDN disabled: using fallback MinIO URL', { url: minioUrl })
         return minioUrl
       }
       
@@ -253,7 +254,7 @@ export class CDNService {
       // Convert to MinIO URL format
       const minioUrl = `https://bucket-production-672e.up.railway.app/sidedecked-card-images/${cdnPath}`
       
-      logger.debug('Converted CDN URL to MinIO URL', {
+      debugInfo('Converted CDN URL to MinIO URL', {
         cdnUrl,
         cdnPath,
         minioUrl

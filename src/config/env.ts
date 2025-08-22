@@ -68,7 +68,12 @@ export const config = {
   // Monitoring
   SENTRY_DSN: process.env.SENTRY_DSN,
   DATADOG_API_KEY: process.env.DATADOG_API_KEY,
-  SLACK_WEBHOOK_URL: process.env.SLACK_WEBHOOK_URL
+  SLACK_WEBHOOK_URL: process.env.SLACK_WEBHOOK_URL,
+  
+  // Debug Configuration
+  DEBUG_ENABLED: process.env.DEBUG_ENABLED === 'true',
+  DEBUG_CATEGORIES: process.env.DEBUG_CATEGORIES || '',
+  DEBUG_RAILWAY_ONLY: process.env.DEBUG_RAILWAY_ONLY === 'true'
 }
 
 // Validate required environment variables

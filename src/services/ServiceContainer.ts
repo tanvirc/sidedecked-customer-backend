@@ -1,5 +1,6 @@
 import { InventorySyncService } from './InventorySyncService'
 import { logger } from '../config/logger'
+import { debugInfo } from '../utils/debug'
 
 /**
  * Simple service container for dependency injection and service management
@@ -76,7 +77,7 @@ export class ServiceContainer {
    */
   registerService(name: string, service: any): void {
     this.services.set(name, service)
-    logger.debug('Service registered', { serviceName: name })
+    debugInfo('Service registered', { serviceName: name })
   }
 
   /**
@@ -149,7 +150,7 @@ export class ServiceContainer {
         // Call shutdown method if it exists
         if (typeof service.shutdown === 'function') {
           await service.shutdown()
-          logger.debug('Service shut down', { serviceName: name })
+          debugInfo('Service shut down', { serviceName: name })
         }
       } catch (error) {
         logger.error('Error shutting down service', error as Error, { serviceName: name })

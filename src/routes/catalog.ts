@@ -10,6 +10,7 @@ import { CardImage, ImageStatus, ImageType } from '../entities/CardImage'
 import { getStorageService } from '../config/infrastructure'
 import { config } from '../config/env'
 import { cdnService } from '../services/CDNService'
+import { debugLog } from '../utils/debug'
 
 const router = Router()
 
@@ -83,7 +84,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
       timeoutPromise
     ]) as CardImage[]
 
-    console.log(`DEBUG: Found ${processedImages.length} processed images for print ${print.id}`)
+    debugLog(`Found ${processedImages.length} processed images for print ${print.id}`)
 
     const images: any = {}
 
@@ -98,12 +99,12 @@ async function getProcessedImageUrls(print: Print): Promise<{
       })
       
       for (const cardImage of sortedImages) {
-        console.log(`DEBUG: Processing CardImage ${cardImage.id}, type: ${cardImage.imageType}`)
+        debugLog(`Processing CardImage ${cardImage.id}, type: ${cardImage.imageType}`)
         
         // Process storage URLs (always MinIO URLs from database)
         if (cardImage.storageUrls) {
           const storageUrls = cardImage.storageUrls as Record<string, string>
-          console.log('DEBUG: Found storage URLs:', Object.keys(storageUrls))
+          debugLog('Found storage URLs:', Object.keys(storageUrls))
           
           // Check image type to determine which fields to populate
           if (cardImage.imageType === ImageType.MAIN) {
@@ -113,7 +114,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
               
               try {
                 const publicUrl = cdnService.getFallbackUrl(url, url)
-                console.log(`DEBUG: MAIN image - mapping ${size} to main display fields`)
+                debugLog(`MAIN image - mapping ${size} to main display fields`)
                 
                 // Only map MAIN images to the primary display fields
                 if (size === 'thumbnail' && !images.thumbnail) images.thumbnail = publicUrl
@@ -123,7 +124,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
                 else if (size === 'original' && !images.original) images.original = publicUrl
                 
               } catch (urlError) {
-                console.warn(`DEBUG: Failed to process MAIN image URL for size ${size}:`, urlError)
+                debugLog(`Failed to process MAIN image URL for size ${size}:`, urlError)
               }
             }
           } else if (cardImage.imageType === ImageType.ART_CROP) {
@@ -132,10 +133,10 @@ async function getProcessedImageUrls(print: Print): Promise<{
             if (normalUrl && !images.artCrop) {
               try {
                 const publicUrl = cdnService.getFallbackUrl(normalUrl, normalUrl)
-                console.log(`DEBUG: ART_CROP image - mapping to artCrop field only`)
+                debugLog(`ART_CROP image - mapping to artCrop field only`)
                 images.artCrop = publicUrl
               } catch (urlError) {
-                console.warn(`DEBUG: Failed to process ART_CROP image URL:`, urlError)
+                debugLog(`Failed to process ART_CROP image URL:`, urlError)
               }
             }
           } else if (cardImage.imageType === ImageType.BORDER_CROP) {
@@ -144,10 +145,10 @@ async function getProcessedImageUrls(print: Print): Promise<{
             if (normalUrl && !images.borderCrop) {
               try {
                 const publicUrl = cdnService.getFallbackUrl(normalUrl, normalUrl)
-                console.log(`DEBUG: BORDER_CROP image - mapping to borderCrop field only`)
+                debugLog(`BORDER_CROP image - mapping to borderCrop field only`)
                 images.borderCrop = publicUrl
               } catch (urlError) {
-                console.warn(`DEBUG: Failed to process BORDER_CROP image URL:`, urlError)
+                debugLog(`Failed to process BORDER_CROP image URL:`, urlError)
               }
             }
           }
@@ -164,7 +165,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
 
     // Priority 3: Final fallback to external URLs if no processed images found
     if (!images.normal && !images.small && !images.large) {
-      console.log('DEBUG: No processed images found, falling back to external URLs')
+      debugLog('No processed images found, falling back to external URLs')
       return {
         thumbnail: print.imageSmall || undefined,
         small: print.imageSmall || undefined,
@@ -176,7 +177,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
     }
 
     // Log final image mapping for debugging
-    console.log('DEBUG: Final image URLs with CDN support:', {
+    debugLog('Final image URLs with CDN support:', {
       hasNormal: !!images.normal,
       hasSmall: !!images.small,
       hasLarge: !!images.large,
@@ -199,7 +200,7 @@ async function getProcessedImageUrls(print: Print): Promise<{
       artCrop: print.imageArtCrop || undefined,
       borderCrop: print.imageBorderCrop || undefined
     }
-    console.log('DEBUG: Using fallback images for print', print.id, ':', fallbackImages)
+    debugLog('Using fallback images for print', print.id, ':', fallbackImages)
     return fallbackImages
   }
 }
@@ -207,14 +208,14 @@ async function getProcessedImageUrls(print: Print): Promise<{
 // Get all games
 router.get('/games', async (req, res) => {
   try {
-    console.log('DEBUG: Starting games fetch...')
+    debugLog('Starting games fetch...')
     
     // Use TypeORM repository for type safety and consistency
     const gameRepository = AppDataSource.getRepository(Game)
     const games = await gameRepository.find({
       order: { name: 'ASC' }
     })
-    console.log('DEBUG: Found games:', games.length)
+    debugLog('Found games:', games.length)
 
     // Return just the data array for frontend compatibility
     res.json(games)
@@ -322,7 +323,7 @@ router.get('/cards/search', async (req, res) => {
     const limitNum = parseInt(limit as string)
     const offset = (pageNum - 1) * limitNum
 
-    console.log('DEBUG: Searching cards with filters:', { games, types, query, page, limit })
+    debugLog('Searching cards with filters:', { games, types, query, page, limit })
 
     // Use TypeORM to get cards with relations for proper image handling
     const cardRepository = AppDataSource.getRepository(Card)
@@ -358,7 +359,7 @@ router.get('/cards/search', async (req, res) => {
 
     const cards = await queryBuilder.getMany()
 
-    console.log('DEBUG: Found cards:', cards.length, 'Total:', totalCount)
+    debugLog('Found cards:', cards.length, 'Total:', totalCount)
 
     // Convert to search results format with proper image data
     const hits = await Promise.all(cards.map(async (card) => {
@@ -461,7 +462,7 @@ router.get('/cards/search', async (req, res) => {
 // Get card by ID
 router.get('/cards/:id', async (req, res) => {
   try {
-    console.log('DEBUG: Fetching card for ID:', req.params.id)
+    debugLog('Fetching card for ID:', req.params.id)
     
     const cardRepository = AppDataSource.getRepository(Card)
     const card = await cardRepository.findOne({
@@ -469,7 +470,7 @@ router.get('/cards/:id', async (req, res) => {
       relations: ['game', 'prints', 'prints.set']
     })
     
-    console.log('DEBUG: Found card:', card ? card.name : 'none')
+    debugLog('Found card:', card ? card.name : 'none')
     
     if (!card) {
       return res.status(404).json({
@@ -543,7 +544,7 @@ router.get('/cards/:id', async (req, res) => {
       })) || [])
     }
 
-    console.log('DEBUG: Returning card:', card.name)
+    debugLog('Returning card:', card.name)
     
     // Return just the card object for frontend compatibility
     res.json(cardResponse)
@@ -564,7 +565,7 @@ router.get('/cards/:id', async (req, res) => {
 // Get card details (enhanced with additional data)
 router.get('/cards/:id/details', async (req, res) => {
   try {
-    console.log('DEBUG: Fetching card details for ID:', req.params.id)
+    debugLog('Fetching card details for ID:', req.params.id)
     
     const cardRepository = AppDataSource.getRepository(Card)
     const card = await cardRepository.findOne({
@@ -572,8 +573,8 @@ router.get('/cards/:id/details', async (req, res) => {
       relations: ['game', 'prints', 'prints.set']
     })
     
-    console.log('DEBUG: Found card:', card ? card.name : 'none')
-    console.log('DEBUG: Found prints:', card?.prints?.length || 0)
+    debugLog('Found card:', card ? card.name : 'none')
+    debugLog('Found prints:', card?.prints?.length || 0)
     
     if (!card) {
       return res.status(404).json({
@@ -678,7 +679,7 @@ router.get('/cards/:id/details', async (req, res) => {
         ) || []
     }
 
-    console.log('DEBUG: Returning card details for:', card.name)
+    debugLog('Returning card details for:', card.name)
     
     // Return card details directly for frontend compatibility
     res.json(cardDetails)
@@ -753,7 +754,7 @@ router.get('/search/facets', async (req, res) => {
       formats,
     } = req.query
 
-    console.log('DEBUG: Calculating facets with filters:', { query, games, types, rarities, sets })
+    debugLog('Calculating facets with filters:', { query, games, types, rarities, sets })
 
     const cardRepository = AppDataSource.getRepository(Card)
     let baseQueryBuilder = cardRepository
@@ -971,7 +972,7 @@ router.get('/search/facets', async (req, res) => {
       }
     }
 
-    console.log('DEBUG: Calculated facets:', {
+    debugLog('Calculated facets:', {
       games: facets.games.length,
       types: facets.types.length,
       rarities: facets.rarities.length,
