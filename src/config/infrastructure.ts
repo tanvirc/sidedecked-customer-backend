@@ -70,7 +70,10 @@ export const getMinioClient = (): MinioClient => {
       port: port,
       useSSL: useSSL,
       accessKey: config.MINIO_ACCESS_KEY || '',
-      secretKey: config.MINIO_SECRET_KEY || ''
+      secretKey: config.MINIO_SECRET_KEY || '',
+      transportAgent: config.NODE_ENV === 'production' ? undefined : undefined,
+      sessionToken: undefined,
+      pathStyle: false
     })
 
     logger.info('MinIO client initialized', {
@@ -347,13 +350,25 @@ export const initializeInfrastructure = async (): Promise<void> => {
     await redis.ping()
     logger.info('Redis initialized')
 
-    // Initialize storage
+    // Initialize storage with timeout and non-blocking approach
     try {
+      // Set a shorter timeout for storage initialization to avoid blocking startup
       const storage = getStorageService()
-      await storage.ensureBucket()
+      const storageInitPromise = storage.ensureBucket()
+      
+      // Use Promise.race to implement a timeout
+      await Promise.race([
+        storageInitPromise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Storage initialization timeout')), 10000)
+        )
+      ])
+      
       logger.info('Storage initialized')
     } catch (error) {
+      // Don't block server startup if storage is unavailable
       logger.warn('Storage initialization failed (will retry on first use)', error as Error)
+      logger.warn('Server will continue without storage - images may not load until storage is available')
     }
 
     // Initialize Algolia (connection is lazy)

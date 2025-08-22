@@ -78,10 +78,21 @@ export class StorageService {
    */
   async initialize(): Promise<void> {
     try {
-      const bucketExists = await this.client.bucketExists(this.bucket)
+      // Use a timeout for bucket operations to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Storage operation timeout')), 15000)
+      )
+
+      const bucketExists = await Promise.race([
+        this.client.bucketExists(this.bucket),
+        timeoutPromise
+      ]) as boolean
       
       if (!bucketExists) {
-        await this.client.makeBucket(this.bucket, 'us-east-1')
+        await Promise.race([
+          this.client.makeBucket(this.bucket, 'us-east-1'),
+          timeoutPromise
+        ])
         logger.info('Storage bucket created', { bucket: this.bucket })
         
         // Set bucket policy for public read access
@@ -97,7 +108,10 @@ export class StorageService {
           ]
         }
         
-        await this.client.setBucketPolicy(this.bucket, JSON.stringify(policy))
+        await Promise.race([
+          this.client.setBucketPolicy(this.bucket, JSON.stringify(policy)),
+          timeoutPromise
+        ])
         logger.info('Storage bucket policy set', { bucket: this.bucket })
       } else {
         logger.info('Storage bucket already exists', { bucket: this.bucket })
