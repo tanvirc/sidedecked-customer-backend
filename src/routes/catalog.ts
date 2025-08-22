@@ -65,14 +65,23 @@ async function getProcessedImageUrls(print: Print): Promise<{
   borderCrop?: string
 }> {
   try {
-    // Try to get processed images from CardImage table
+    // Try to get processed images from CardImage table with timeout
     const cardImageRepo = AppDataSource.getRepository(CardImage)
-    const processedImages = await cardImageRepo.find({
-      where: { 
-        printId: print.id,
-        status: ImageStatus.COMPLETED
-      }
-    })
+    
+    // Add timeout to prevent hanging on database queries
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Database query timeout')), 5000)
+    )
+    
+    const processedImages = await Promise.race([
+      cardImageRepo.find({
+        where: { 
+          printId: print.id,
+          status: ImageStatus.COMPLETED
+        }
+      }),
+      timeoutPromise
+    ]) as CardImage[]
 
     console.log(`DEBUG: Found ${processedImages.length} processed images for print ${print.id}`)
 
@@ -180,9 +189,9 @@ async function getProcessedImageUrls(print: Print): Promise<{
     return images
     
   } catch (error) {
-    console.error('Error getting processed image URLs for print', print.id, ':', error)
-    // Fallback to external URLs on error
-    return {
+    console.warn('Error getting processed image URLs for print', print.id, ':', error)
+    // Always fallback to external URLs on error - this ensures mobile compatibility
+    const fallbackImages = {
       thumbnail: print.imageSmall || undefined,
       small: print.imageSmall || undefined,
       normal: print.imageNormal || undefined,
@@ -190,6 +199,8 @@ async function getProcessedImageUrls(print: Print): Promise<{
       artCrop: print.imageArtCrop || undefined,
       borderCrop: print.imageBorderCrop || undefined
     }
+    console.log('DEBUG: Using fallback images for print', print.id, ':', fallbackImages)
+    return fallbackImages
   }
 }
 
@@ -921,16 +932,16 @@ router.get('/search/facets', async (req, res) => {
               card.id,
               jsonb_array_elements_text(card.colors) as color_value
             FROM cards card
-            LEFT JOIN games game ON card.game_id = game.id
+            LEFT JOIN games game ON card.gameId = game.id
             WHERE card.deleted_at IS NULL 
               AND game.code = 'MTG'
               AND card.colors IS NOT NULL
               AND jsonb_array_length(card.colors) > 0
           ) color_expanded
           LEFT JOIN cards card ON card.id = color_expanded.id
-          LEFT JOIN games game ON card.game_id = game.id
-          LEFT JOIN prints ON prints.card_id = card.id
-          LEFT JOIN card_sets "set" ON prints.set_id = "set".id
+          LEFT JOIN games game ON card.gameId = game.id
+          LEFT JOIN prints ON prints.cardId = card.id
+          LEFT JOIN card_sets "set" ON prints.setId = "set".id
           WHERE game.code = 'MTG'
           ${types ? 'AND card.primary_type = ANY($1)' : ''}
           ${rarities && types ? 'AND prints.rarity = ANY($2)' : rarities ? 'AND prints.rarity = ANY($1)' : ''}
