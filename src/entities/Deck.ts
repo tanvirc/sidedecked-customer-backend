@@ -26,7 +26,7 @@ export class Deck {
   @Column({ type: 'uuid' })
   gameId: string
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   formatId: string
 
   @ManyToOne(() => Game, { eager: false })
