@@ -331,7 +331,7 @@ export class PriceHistoryService {
 
     // Determine trend
     let trend: 'up' | 'down' | 'stable' = 'stable'
-    let trend_percentage = weekly_change
+    const trend_percentage = weekly_change
 
     if (Math.abs(weekly_change) > 5) { // 5% threshold
       trend = weekly_change > 0 ? 'up' : 'down'

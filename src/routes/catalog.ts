@@ -352,7 +352,7 @@ router.get('/cards/search', async (req, res) => {
 
     // Use TypeORM to get cards with relations for proper image handling
     const cardRepository = AppDataSource.getRepository(Card)
-    let queryBuilder = cardRepository
+    const queryBuilder = cardRepository
       .createQueryBuilder('card')
       .leftJoinAndSelect('card.game', 'game')
       .leftJoinAndSelect('card.prints', 'prints')
@@ -877,7 +877,7 @@ router.get('/search/facets', async (req, res) => {
     debugLog('Calculating facets with filters:', { query, games, types, rarities, sets })
 
     const cardRepository = AppDataSource.getRepository(Card)
-    let baseQueryBuilder = cardRepository
+    const baseQueryBuilder = cardRepository
       .createQueryBuilder('card')
       .leftJoin('card.game', 'game')
       .leftJoin('card.prints', 'prints')
