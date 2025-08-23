@@ -5,7 +5,7 @@ export class UserProfile {
   @PrimaryGeneratedColumn('uuid')
   id: string
 
-  @Column({ type: 'uuid', unique: true })
+  @Column({ type: 'varchar', length: 255, unique: true })
   customerId: string
 
   @Column({ type: 'varchar', length: 100, nullable: true })

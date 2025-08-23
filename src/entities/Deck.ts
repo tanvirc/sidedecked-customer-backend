@@ -20,7 +20,7 @@ export class Deck {
   @Column({ type: 'varchar', length: 255 })
   name: string
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   userId: string
 
   @Column({ type: 'uuid' })
