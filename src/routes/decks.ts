@@ -6,10 +6,12 @@ import { Card } from '../entities/Card'
 import { Game } from '../entities/Game'
 import { CatalogSKU } from '../entities/CatalogSKU'
 import { authenticateToken, optionalAuth, AuthenticatedRequest } from '../middleware/auth'
-import { validateUUID, validateUUIDs } from '../middleware/validation'
+import { validateUUID, validateUUIDs, validateMedusaCustomerID } from '../middleware/validation'
 import { databaseErrorHandler } from '../config/database'
+import { createErrorResponse, ErrorCodes, handleDatabaseError } from '../utils/error-response'
 
 const router = Router()
+
 
 interface CreateDeckRequest {
   name: string
@@ -136,7 +138,7 @@ router.get('/public', async (req: Request, res: Response) => {
 })
 
 // Get all decks for a user
-router.get('/user/:userId', validateUUID('userId'), async (req: Request, res: Response) => {
+router.get('/user/:userId', validateMedusaCustomerID('userId'), async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
     const { game } = req.query
@@ -196,10 +198,11 @@ router.get('/:deckId', validateUUID('deckId'), optionalAuth, async (req: Authent
     })
 
     if (!deck) {
-      return res.status(404).json({
-        success: false,
-        message: 'Deck not found'
-      })
+      return res.status(404).json(createErrorResponse(
+        ErrorCodes.RESOURCE_NOT_FOUND,
+        'Deck not found',
+        { deckId }
+      ))
     }
 
     // Check if user can access this deck (public deck or owner)
@@ -207,10 +210,15 @@ router.get('/:deckId', validateUUID('deckId'), optionalAuth, async (req: Authent
     const canAccess = deck.isPublic || isOwner
 
     if (!canAccess) {
-      return res.status(404).json({
-        success: false,
-        message: 'Deck not found'
-      })
+      return res.status(404).json(createErrorResponse(
+        ErrorCodes.RESOURCE_NOT_FOUND,
+        'Deck not found',
+        {
+          isPublic: deck.isPublic,
+          isAuthenticated: !!req.user,
+          isOwner
+        }
+      ))
     }
 
     // Get deck cards with card details

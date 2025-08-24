@@ -2,6 +2,52 @@ import { Request, Response, NextFunction } from 'express'
 import { logger } from '../config/logger'
 
 /**
+ * Validate MedusaJS customer ID format (cus_XXXXXXXXXXXXXXXXX)
+ */
+export const validateMedusaCustomerID = (paramName: string) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const customerId = req.params[paramName]
+    
+    if (!customerId) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_PARAMETER',
+          message: `Missing required parameter: ${paramName}`,
+          timestamp: new Date().toISOString()
+        }
+      })
+    }
+
+    // MedusaJS customer ID format: cus_ followed by alphanumeric characters
+    const customerIdRegex = /^cus_[A-Za-z0-9]{20,}$/
+    
+    if (!customerIdRegex.test(customerId)) {
+      logger.warn('Invalid MedusaJS customer ID format provided', {
+        paramName,
+        providedValue: customerId,
+        userAgent: req.get('User-Agent'),
+        ip: req.ip,
+        url: req.url
+      })
+      
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CUSTOMER_ID_FORMAT',
+          message: `Invalid MedusaJS customer ID format for parameter '${paramName}'. Expected format: cus_XXXXXXXXXXXXXXXXXXXX`,
+          parameter: paramName,
+          provided: customerId,
+          timestamp: new Date().toISOString()
+        }
+      })
+    }
+
+    next()
+  }
+}
+
+/**
  * Validate UUID format in request parameters
  */
 export const validateUUID = (paramName: string) => {
