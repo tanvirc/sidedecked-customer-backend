@@ -29,6 +29,33 @@ export class Deck {
   @Column({ type: 'varchar', length: 255, nullable: true })
   formatId: string
 
+  @Column({ type: 'text', nullable: true })
+  description: string
+
+  @Column({ type: 'boolean', default: false })
+  isPublic: boolean
+
+  @Column({ type: 'int', default: 0 })
+  likes: number
+
+  @Column({ type: 'int', default: 0 })
+  views: number
+
+  @Column({ type: 'int', default: 0 })
+  copies: number
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  coverCardId: string
+
+  @Column({ type: 'text', nullable: true })
+  coverImageUrl: string
+
+  @Column({ type: 'jsonb', nullable: true })
+  tags: string[]
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  totalValue: number
+
   @ManyToOne(() => Game, { eager: false })
   @JoinColumn({ name: 'gameId' })
   game: Game

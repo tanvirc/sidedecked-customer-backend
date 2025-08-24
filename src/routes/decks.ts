@@ -21,6 +21,115 @@ interface AddCardToDeckRequest {
   quantity?: number
 }
 
+// Get all public decks
+router.get('/public', async (req: Request, res: Response) => {
+  try {
+    const { game, format, sort = 'newest', page = '1', limit = '20' } = req.query
+
+    const deckRepository = AppDataSource.getRepository(Deck)
+    const query = deckRepository.createQueryBuilder('deck')
+      .leftJoinAndSelect('deck.game', 'game')
+      .leftJoin('deck.cards', 'deckCard')
+      .addSelect('COUNT(deckCard.id)', 'cardCount')
+      .where('deck.isPublic = :isPublic', { isPublic: true })
+      .groupBy('deck.id, game.id')
+
+    // Apply filters
+    if (game) {
+      if (Array.isArray(game)) {
+        query.andWhere('game.code IN (:...gameCodes)', { gameCodes: game })
+      } else {
+        query.andWhere('game.code = :gameCode', { gameCode: game })
+      }
+    }
+
+    if (format) {
+      query.andWhere('deck.formatId = :formatId', { formatId: format })
+    }
+
+    // Apply sorting
+    switch (sort) {
+      case 'newest':
+        query.orderBy('deck.createdAt', 'DESC')
+        break
+      case 'updated':
+        query.orderBy('deck.updatedAt', 'DESC')
+        break
+      case 'popular':
+        query.orderBy('deck.likes', 'DESC')
+        break
+      case 'views':
+        query.orderBy('deck.views', 'DESC')
+        break
+      case 'value':
+        query.orderBy('deck.totalValue', 'DESC')
+        break
+      default:
+        query.orderBy('deck.createdAt', 'DESC')
+    }
+
+    // Apply pagination
+    const pageNum = parseInt(page as string)
+    const limitNum = parseInt(limit as string)
+    query.skip((pageNum - 1) * limitNum).take(limitNum)
+
+    const decks = await query.getRawAndEntities()
+    
+    const formattedDecks = decks.entities.map((deck, index) => ({
+      id: deck.id,
+      name: deck.name,
+      description: deck.description,
+      game: deck.game?.code || 'UNKNOWN',
+      gameName: deck.game?.displayName || 'Unknown',
+      formatId: deck.formatId,
+      isPublic: deck.isPublic,
+      author: {
+        id: deck.userId,
+        name: 'User' // TODO: Join with user table when available
+      },
+      stats: {
+        totalCards: parseInt(decks.raw[index]?.cardCount) || 0,
+        likes: deck.likes,
+        views: deck.views,
+        copies: deck.copies
+      },
+      pricing: {
+        totalValue: parseFloat(deck.totalValue?.toString() || '0')
+      },
+      tags: deck.tags || [],
+      coverCardId: deck.coverCardId,
+      coverImageUrl: deck.coverImageUrl,
+      createdAt: deck.createdAt,
+      updatedAt: deck.updatedAt
+    }))
+
+    // Get total count for pagination
+    const totalCount = await deckRepository.createQueryBuilder('deck')
+      .where('deck.isPublic = :isPublic', { isPublic: true })
+      .getCount()
+
+    res.json({
+      success: true,
+      data: {
+        decks: formattedDecks,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limitNum)
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Error fetching public decks:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch public decks',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+})
+
 // Get all decks for a user
 router.get('/user/:userId', async (req: Request, res: Response) => {
   try {

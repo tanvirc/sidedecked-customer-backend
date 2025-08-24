@@ -432,7 +432,7 @@ router.get('/cards/search', async (req, res) => {
             try {
               processedImages = await Promise.race([
                 getProcessedImageUrls(print),
-                new Promise<{}>((resolve) => 
+                new Promise<Record<string, never>>((resolve) => 
                   setTimeout(() => resolve({}), 5000)
                 )
               ])
