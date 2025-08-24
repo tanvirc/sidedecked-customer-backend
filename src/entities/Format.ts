@@ -66,6 +66,40 @@ export class Format {
   @Column({ type: 'jsonb', nullable: true })
   specialRules: any // Format-specific rules
 
+  // Game-specific deck construction rules
+  @Column({ type: 'boolean', default: false })
+  leaderRequired: boolean // One Piece requires leader card
+
+  @Column({ type: 'integer', default: 0 })
+  leaderZoneSize: number // 1 for One Piece, 0 for others
+
+  @Column({ type: 'integer', default: 0 })
+  donDeckSize: number // 10 for One Piece, 0 for others
+
+  @Column({ type: 'integer', default: 0 })
+  prizeCardCount: number // 6 for Pokemon, 0 for others
+
+  @Column({ type: 'text', array: true, nullable: true })
+  regulationMarks: string[] // Pokemon rotation marks ['G', 'H']
+
+  @Column({ type: 'text', array: true, nullable: true })
+  restrictedCards: string[] // Vintage restricted list (limit 1)
+
+  @Column({ type: 'boolean', default: false })
+  extraDeckRequired: boolean // Yu-Gi-Oh formats
+
+  @Column({ type: 'integer', default: 0 })
+  maxExtraDeckSize: number // 15 for Yu-Gi-Oh, 0 for others
+
+  @Column({ type: 'boolean', default: false })
+  isSingleton: boolean // Commander, GLC - only 1 copy of each card
+
+  @Column({ type: 'boolean', default: false })
+  typeRestricted: boolean // GLC - all Pokemon must share type
+
+  @Column({ type: 'text', array: true, nullable: true })
+  rarityRestrictions: string[] // Pauper: ['common'], others: null
+
   @Column({ type: 'boolean', default: true })
   isActive: boolean
 

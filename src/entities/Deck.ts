@@ -29,6 +29,9 @@ export class Deck {
   @Column({ type: 'varchar', length: 255, nullable: true })
   formatId: string
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  formatCode: string // Reference to Format.code for easier lookup
+
   @Column({ type: 'text', nullable: true })
   description: string
 
@@ -49,6 +52,9 @@ export class Deck {
 
   @Column({ type: 'text', nullable: true })
   coverImageUrl: string
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  leaderCardId: string // One Piece leader card
 
   @Column({ type: 'jsonb', nullable: true })
   tags: string[]

@@ -4,6 +4,7 @@ import { Deck } from '../entities/Deck'
 import { DeckCard } from '../entities/DeckCard'
 import { Card } from '../entities/Card'
 import { Game } from '../entities/Game'
+import { Format } from '../entities/Format'
 import { CatalogSKU } from '../entities/CatalogSKU'
 import { authenticateToken, optionalAuth, AuthenticatedRequest } from '../middleware/auth'
 import { validateUUID, validateUUIDs, validateMedusaCustomerID } from '../middleware/validation'
@@ -16,7 +17,8 @@ const router = Router()
 interface CreateDeckRequest {
   name: string
   gameId: string
-  formatId?: string
+  formatId?: string // UUID for backward compatibility
+  formatCode?: string // New format code system
   description?: string
   tags?: string[]
   isPublic?: boolean
@@ -26,6 +28,7 @@ interface AddCardToDeckRequest {
   cardId: string
   catalogSku: string
   quantity?: number
+  zone?: 'main' | 'sideboard' | 'commander' | 'extra' | 'leader' | 'don' | 'prize'
 }
 
 // Get all public decks
@@ -397,7 +400,7 @@ router.get('/:deckId', validateUUID('deckId'), optionalAuth, async (req: Authent
 // Create a new deck
 router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, gameId, formatId, description, tags, isPublic }: CreateDeckRequest = req.body
+    const { name, gameId, formatId, formatCode, description, tags, isPublic }: CreateDeckRequest = req.body
 
     if (!name || !gameId) {
       return res.status(400).json({
@@ -424,29 +427,79 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
       })
     }
 
+    // Format validation and lookup
+    let format: Format | null = null
+    if (formatCode) {
+      // New format code system - find format by game and code
+      const formatRepository = AppDataSource.getRepository(Format)
+      format = await formatRepository.findOne({
+        where: { 
+          gameId: gameId,
+          code: formatCode,
+          isActive: true
+        }
+      })
+
+      if (!format) {
+        return res.status(400).json({
+          success: false,
+          message: `Format '${formatCode}' not found for game '${game.code}'`,
+          availableFormats: `Available formats can be found at /api/formats?game=${game.code}`
+        })
+      }
+    } else if (formatId) {
+      // Legacy format ID system - find format by UUID
+      const formatRepository = AppDataSource.getRepository(Format)
+      format = await formatRepository.findOne({
+        where: { 
+          id: formatId,
+          gameId: gameId,
+          isActive: true
+        }
+      })
+
+      if (!format) {
+        return res.status(400).json({
+          success: false,
+          message: 'Format not found or not compatible with selected game'
+        })
+      }
+    }
+
     const deckRepository = AppDataSource.getRepository(Deck)
     const deck = new Deck()
     deck.name = name.trim()
     deck.userId = req.user.id
     deck.gameId = gameId
-    if (formatId) deck.formatId = formatId
+    
+    // Store both format ID and code for flexibility
+    if (format) {
+      deck.formatId = format.id
+      deck.formatCode = format.code
+    }
+    
     if (description) deck.description = description
     if (tags && tags.length > 0) deck.tags = tags
     deck.isPublic = isPublic || false
 
-    console.log('Creating deck with user ID:', {
+    console.log('Creating deck with enhanced format system:', {
       deckName: deck.name,
       userId: deck.userId,
-      userFromToken: req.user.id,
+      gameId: gameId,
+      gameCode: game.code,
+      formatId: deck.formatId,
+      formatCode: deck.formatCode,
+      formatName: format?.name,
       isPublic: deck.isPublic
     })
 
     const savedDeck = await deckRepository.save(deck)
     
-    console.log('Deck created successfully:', {
+    console.log('Deck created successfully with format:', {
       deckId: savedDeck.id,
       userId: savedDeck.userId,
-      name: savedDeck.name
+      name: savedDeck.name,
+      formatCode: savedDeck.formatCode
     })
 
     res.status(201).json({
@@ -456,7 +509,26 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
           ...savedDeck,
           gameCode: game.code,
           gameName: game.displayName,
-          cardCount: 0
+          cardCount: 0,
+          format: format ? {
+            id: format.id,
+            code: format.code,
+            name: format.name,
+            rules: {
+              minDeckSize: format.minDeckSize,
+              maxDeckSize: format.maxDeckSize,
+              maxCopiesPerCard: format.maxCopiesPerCard,
+              allowsSideboard: format.allowsSideboard,
+              maxSideboardSize: format.maxSideboardSize,
+              leaderRequired: format.leaderRequired,
+              donDeckSize: format.donDeckSize,
+              prizeCardCount: format.prizeCardCount,
+              extraDeckRequired: format.extraDeckRequired,
+              maxExtraDeckSize: format.maxExtraDeckSize,
+              isSingleton: format.isSingleton,
+              typeRestricted: format.typeRestricted
+            }
+          } : null
         }
       }
     })
@@ -474,7 +546,7 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 router.post('/:deckId/cards', validateUUID('deckId'), async (req: Request, res: Response) => {
   try {
     const { deckId } = req.params
-    const { cardId, catalogSku, quantity = 1 }: AddCardToDeckRequest = req.body
+    const { cardId, catalogSku, quantity = 1, zone = 'main' }: AddCardToDeckRequest = req.body
 
     if (!cardId && !catalogSku) {
       return res.status(400).json({
@@ -519,23 +591,28 @@ router.post('/:deckId/cards', validateUUID('deckId'), async (req: Request, res: 
       })
     }
 
-    // Check if card is already in deck
+    // Check if card is already in deck in the same zone
     const deckCardRepository = AppDataSource.getRepository(DeckCard)
     let deckCard = await deckCardRepository.findOne({
-      where: { deckId, cardId: card.id }
+      where: { 
+        deckId, 
+        cardId: card.id,
+        zone: zone
+      }
     })
 
     if (deckCard) {
-      // Update quantity
+      // Update quantity for existing card in same zone
       deckCard.quantity += quantity
       await deckCardRepository.save(deckCard)
     } else {
-      // Add new card to deck
+      // Add new card to deck in specified zone
       deckCard = deckCardRepository.create({
         deckId,
         cardId: card.id,
         catalogSku: catalogSku || '',
-        quantity
+        quantity,
+        zone
       })
       await deckCardRepository.save(deckCard)
     }
