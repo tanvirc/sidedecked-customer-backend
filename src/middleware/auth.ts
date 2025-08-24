@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { config } from '../config/env'
 import { logger } from '../config/logger'
+import { handleAuthError, createErrorResponse, ErrorCodes } from '../utils/error-response'
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -34,20 +35,34 @@ export const authenticateToken = (req: AuthenticatedRequest, res: Response, next
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Access token required'
+      logger.warn('Authentication failed: No token provided', {
+        headers: req.headers,
+        userAgent: req.get('User-Agent'),
+        ip: req.ip
       })
+      return res.status(401).json(createErrorResponse(
+        ErrorCodes.AUTH_TOKEN_MISSING,
+        'Access token required'
+      ))
     }
 
     // Verify JWT token
     const decoded = jwt.verify(token, config.JWT_SECRET) as JWTPayload
 
     if (!decoded.actor_id || decoded.actor_type !== 'customer') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token format or not a customer token'
+      logger.warn('Authentication failed: Invalid token format', {
+        tokenPayload: {
+          actor_id: decoded.actor_id,
+          actor_type: decoded.actor_type,
+          hasCustomerId: !!decoded.app_metadata?.customer_id
+        },
+        userAgent: req.get('User-Agent'),
+        ip: req.ip
       })
+      return res.status(401).json(createErrorResponse(
+        ErrorCodes.AUTH_TOKEN_INVALID,
+        'Invalid token format or not a customer token'
+      ))
     }
 
     // Extract user information from token
@@ -61,24 +76,12 @@ export const authenticateToken = (req: AuthenticatedRequest, res: Response, next
 
     next()
   } catch (error) {
-    logger.error('JWT authentication failed', { error: (error as Error).message })
-    
-    if (error instanceof jwt.TokenExpiredError) {
-      return res.status(401).json({
-        success: false,
-        message: 'Token expired'
-      })
-    } else if (error instanceof jwt.JsonWebTokenError) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token'
-      })
-    }
-
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication failed'
-    })
+    return handleAuthError(
+      res,
+      error as Error,
+      req.get('User-Agent'),
+      req.ip
+    )
   }
 }
 

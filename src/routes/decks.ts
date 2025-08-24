@@ -6,6 +6,8 @@ import { Card } from '../entities/Card'
 import { Game } from '../entities/Game'
 import { CatalogSKU } from '../entities/CatalogSKU'
 import { authenticateToken, optionalAuth, AuthenticatedRequest } from '../middleware/auth'
+import { validateUUID, validateUUIDs } from '../middleware/validation'
+import { databaseErrorHandler } from '../config/database'
 
 const router = Router()
 
@@ -134,7 +136,7 @@ router.get('/public', async (req: Request, res: Response) => {
 })
 
 // Get all decks for a user
-router.get('/user/:userId', async (req: Request, res: Response) => {
+router.get('/user/:userId', validateUUID('userId'), async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
     const { game } = req.query
@@ -183,7 +185,7 @@ router.get('/user/:userId', async (req: Request, res: Response) => {
 })
 
 // Get a specific deck with its cards
-router.get('/:deckId', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/:deckId', validateUUID('deckId'), optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { deckId } = req.params
 
@@ -335,7 +337,7 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 })
 
 // Add a card to a deck
-router.post('/:deckId/cards', async (req: Request, res: Response) => {
+router.post('/:deckId/cards', validateUUID('deckId'), async (req: Request, res: Response) => {
   try {
     const { deckId } = req.params
     const { cardId, catalogSku, quantity = 1 }: AddCardToDeckRequest = req.body
@@ -428,7 +430,7 @@ router.post('/:deckId/cards', async (req: Request, res: Response) => {
 })
 
 // Remove a card from a deck
-router.delete('/:deckId/cards/:cardId', async (req: Request, res: Response) => {
+router.delete('/:deckId/cards/:cardId', validateUUIDs('deckId', 'cardId'), async (req: Request, res: Response) => {
   try {
     const { deckId, cardId } = req.params
     const { quantity } = req.query
@@ -475,7 +477,7 @@ router.delete('/:deckId/cards/:cardId', async (req: Request, res: Response) => {
 })
 
 // Delete a deck
-router.delete('/:deckId', async (req: Request, res: Response) => {
+router.delete('/:deckId', validateUUID('deckId'), async (req: Request, res: Response) => {
   try {
     const { deckId } = req.params
 

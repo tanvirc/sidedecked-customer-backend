@@ -11,6 +11,8 @@ import { getStorageService } from '../config/infrastructure'
 import { config } from '../config/env'
 import { cdnService } from '../services/CDNService'
 import { debugLog } from '../utils/debug'
+import { validateUUID, validatePagination } from '../middleware/validation'
+import { databaseErrorHandler } from '../config/database'
 
 const router = Router()
 
@@ -236,7 +238,7 @@ router.get('/games', async (req, res) => {
 })
 
 // Get game by ID
-router.get('/games/:id', async (req, res) => {
+router.get('/games/:id', validateUUID('id'), async (req, res) => {
   try {
     const gameRepository = AppDataSource.getRepository(Game)
     const game = await gameRepository.findOne({
@@ -580,7 +582,7 @@ router.get('/cards/search', async (req, res) => {
 })
 
 // Get card by ID
-router.get('/cards/:id', async (req, res) => {
+router.get('/cards/:id', validateUUID('id'), async (req, res) => {
   try {
     debugLog('Fetching card for ID:', req.params.id)
     
@@ -683,15 +685,19 @@ router.get('/cards/:id', async (req, res) => {
 })
 
 // Get card details (enhanced with additional data)
-router.get('/cards/:id/details', async (req, res) => {
+router.get('/cards/:id/details', validateUUID('id'), async (req, res) => {
   try {
     debugLog('Fetching card details for ID:', req.params.id)
     
-    const cardRepository = AppDataSource.getRepository(Card)
-    const card = await cardRepository.findOne({
-      where: { id: req.params.id },
-      relations: ['game', 'prints', 'prints.set']
-    })
+    const operation = async () => {
+      const cardRepository = AppDataSource.getRepository(Card)
+      return await cardRepository.findOne({
+        where: { id: req.params.id },
+        relations: ['game', 'prints', 'prints.set']
+      })
+    }
+    
+    const card = await databaseErrorHandler(operation)
     
     debugLog('Found card:', card ? card.name : 'none')
     debugLog('Found prints:', card?.prints?.length || 0)
@@ -747,7 +753,7 @@ router.get('/cards/:id/details', async (req, res) => {
         name: card.game.name
       } : null,
       // Add prints using TypeORM relation data
-      prints: await Promise.all(card.prints?.map(async (print) => ({
+      prints: await Promise.all(card.prints?.map(async (print: Print) => ({
         id: print.id,
         rarity: print.rarity,
         artist: print.artist,
@@ -787,15 +793,15 @@ router.get('/cards/:id/details', async (req, res) => {
       },
       // Add sets from prints
       sets: card.prints
-        ?.filter((print) => print.set)
-        .map((print) => ({
+        ?.filter((print: Print) => print.set)
+        .map((print: Print) => ({
           id: print.set!.id,
           code: print.set!.code,
           name: print.set!.name
         }))
-        .filter((set, index, self) => 
+        .filter((set: any, index: number, self: any[]) => 
           // Remove duplicates by ID
-          index === self.findIndex(s => s.id === set.id)
+          index === self.findIndex((s: any) => s.id === set.id)
         ) || []
     }
 
