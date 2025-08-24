@@ -200,6 +200,16 @@ router.get('/:deckId/edit', validateUUID('deckId'), authenticateToken, async (re
       relations: ['game']
     })
 
+    // Load format information if deck has formatId
+    let format: Format | null = null
+    if (deck?.formatId) {
+      const formatRepository = AppDataSource.getRepository(Format)
+      format = await formatRepository.findOne({
+        where: { id: deck.formatId, isActive: true },
+        relations: ['game']
+      })
+    }
+
     if (!deck) {
       return res.status(404).json(createErrorResponse(
         ErrorCodes.RESOURCE_NOT_FOUND,
@@ -259,6 +269,24 @@ router.get('/:deckId/edit', validateUUID('deckId'), authenticateToken, async (re
         game: deck.game?.code,
         gameName: deck.game?.displayName,
         isOwnedByCurrentUser: true, // Always true for edit endpoint
+        formatDetails: format ? {
+          id: format.id,
+          code: format.code,
+          name: format.name,
+          minDeckSize: format.minDeckSize,
+          maxDeckSize: format.maxDeckSize,
+          maxCopiesPerCard: format.maxCopiesPerCard,
+          allowsSideboard: format.allowsSideboard,
+          maxSideboardSize: format.maxSideboardSize,
+          leaderRequired: format.leaderRequired,
+          donDeckSize: format.donDeckSize,
+          prizeCardCount: format.prizeCardCount,
+          extraDeckRequired: format.extraDeckRequired,
+          maxExtraDeckSize: format.maxExtraDeckSize,
+          isSingleton: format.isSingleton,
+          typeRestricted: format.typeRestricted
+        } : null,
+        formatCode: format?.code || deck.formatCode, // Include formatCode for easy access
         cards: cardsByZone,
         stats: {
           totalCards: deckCards.reduce((sum, dc) => sum + dc.quantity, 0),
