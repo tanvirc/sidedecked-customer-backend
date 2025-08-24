@@ -8,6 +8,7 @@ import customersRoutes from './customers'
 import deckRoutes from './decks'
 import collectionRoutes from './collections'
 import errorRoutes from './errors'
+import formatRoutes from './formats'
 
 export const setupRoutes = (): Router => {
   const router = Router()
@@ -30,6 +31,7 @@ export const setupRoutes = (): Router => {
         customers: '/api/customers',
         sellers: '/api/sellers',
         errors: '/api/errors',
+        formats: '/api/formats',
         admin: '/api/admin'
       }
     })
@@ -61,6 +63,9 @@ export const setupRoutes = (): Router => {
 
   // Error reporting routes
   router.use('/errors', errorRoutes)
+
+  // Format routes
+  router.use('/formats', formatRoutes)
 
   // TODO: Add remaining route modules
   // router.use('/community', communityRoutes)
