@@ -209,14 +209,37 @@ router.get('/:deckId', validateUUID('deckId'), optionalAuth, async (req: Authent
     const isOwner = req.user && deck.userId === req.user.id
     const canAccess = deck.isPublic || isOwner
 
+    // Debug logging for deck access issues
+    console.log('Deck access debug:', {
+      deckId,
+      deckUserId: deck.userId,
+      reqUserId: req.user?.id,
+      isAuthenticated: !!req.user,
+      isOwner,
+      canAccess,
+      isPublic: deck.isPublic
+    })
+
     if (!canAccess) {
+      console.log('Access denied for deck:', deckId, {
+        reason: deck.isPublic ? 'not owner of public deck' : 'not public and not owner',
+        deckUserId: deck.userId,
+        reqUserId: req.user?.id,
+        userIdMatch: deck.userId === req.user?.id
+      })
+      
       return res.status(404).json(createErrorResponse(
         ErrorCodes.RESOURCE_NOT_FOUND,
         'Deck not found',
         {
           isPublic: deck.isPublic,
           isAuthenticated: !!req.user,
-          isOwner
+          isOwner,
+          debug: {
+            deckUserId: deck.userId,
+            reqUserId: req.user?.id,
+            userIdMatch: deck.userId === req.user?.id
+          }
         }
       ))
     }
@@ -321,7 +344,20 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
     if (tags && tags.length > 0) deck.tags = tags
     deck.isPublic = isPublic || false
 
+    console.log('Creating deck with user ID:', {
+      deckName: deck.name,
+      userId: deck.userId,
+      userFromToken: req.user.id,
+      isPublic: deck.isPublic
+    })
+
     const savedDeck = await deckRepository.save(deck)
+    
+    console.log('Deck created successfully:', {
+      deckId: savedDeck.id,
+      userId: savedDeck.userId,
+      name: savedDeck.name
+    })
 
     res.status(201).json({
       success: true,
