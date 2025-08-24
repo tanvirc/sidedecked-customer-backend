@@ -186,7 +186,97 @@ router.get('/user/:userId', validateMedusaCustomerID('userId'), async (req: Requ
   }
 })
 
-// Get a specific deck with its cards
+// Get a specific deck for editing (requires authentication)
+router.get('/:deckId/edit', validateUUID('deckId'), authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { deckId } = req.params
+
+    const deckRepository = AppDataSource.getRepository(Deck)
+    const deck = await deckRepository.findOne({
+      where: { id: deckId },
+      relations: ['game']
+    })
+
+    if (!deck) {
+      return res.status(404).json(createErrorResponse(
+        ErrorCodes.RESOURCE_NOT_FOUND,
+        'Deck not found',
+        { deckId }
+      ))
+    }
+
+    // Check if user owns this deck (editing requires ownership)
+    const isOwner = req.user && deck.userId === req.user.id
+
+    console.log('Edit access check:', {
+      deckId,
+      deckUserId: deck.userId,
+      reqUserId: req.user?.id,
+      isOwner
+    })
+
+    if (!isOwner) {
+      return res.status(403).json(createErrorResponse(
+        ErrorCodes.AUTH_INSUFFICIENT_PERMISSIONS,
+        'You can only edit your own decks'
+      ))
+    }
+
+    // Get deck cards with card details
+    const deckCardRepository = AppDataSource.getRepository(DeckCard)
+    const deckCards = await deckCardRepository.find({
+      where: { deckId },
+      relations: ['card', 'card.game'],
+      order: { createdAt: 'ASC' }
+    })
+
+    // Group cards by zone for the frontend
+    const cardsByZone = deckCards.reduce((zones: any, dc) => {
+      const zone = dc.zone || 'main'
+      if (!zones[zone]) zones[zone] = []
+      zones[zone].push({
+        id: dc.id,
+        catalogSku: dc.catalogSku,
+        quantity: dc.quantity,
+        zone: dc.zone,
+        name: dc.card?.name,
+        cardName: dc.card?.name,
+        cardId: dc.card?.id,
+        mana_cost: dc.card?.manaCost,
+        card: dc.card,
+        addedAt: dc.createdAt
+      })
+      return zones
+    }, {})
+
+    res.json({
+      success: true,
+      data: {
+        ...deck,
+        game: deck.game?.code,
+        gameName: deck.game?.displayName,
+        isOwnedByCurrentUser: true, // Always true for edit endpoint
+        cards: cardsByZone,
+        stats: {
+          totalCards: deckCards.reduce((sum, dc) => sum + dc.quantity, 0),
+          likes: deck.likes,
+          views: deck.views,
+          copies: deck.copies
+        }
+      }
+    })
+
+  } catch (error) {
+    console.error('Error fetching deck for edit:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch deck for editing',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+})
+
+// Get a specific deck with its cards (public access)
 router.get('/:deckId', validateUUID('deckId'), optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { deckId } = req.params
