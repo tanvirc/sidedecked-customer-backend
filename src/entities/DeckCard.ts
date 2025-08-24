@@ -26,6 +26,9 @@ export class DeckCard {
   @Column({ type: 'integer', default: 1 })
   quantity: number
 
+  @Column({ type: 'varchar', length: 20, default: 'main' })
+  zone: string
+
   @ManyToOne(() => Deck, deck => deck.cards, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'deckId' })
   deck: Deck

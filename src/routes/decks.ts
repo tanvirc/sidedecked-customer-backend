@@ -5,14 +5,17 @@ import { DeckCard } from '../entities/DeckCard'
 import { Card } from '../entities/Card'
 import { Game } from '../entities/Game'
 import { CatalogSKU } from '../entities/CatalogSKU'
+import { authenticateToken, optionalAuth, AuthenticatedRequest } from '../middleware/auth'
 
 const router = Router()
 
 interface CreateDeckRequest {
   name: string
-  userId: string
   gameId: string
   formatId?: string
+  description?: string
+  tags?: string[]
+  isPublic?: boolean
 }
 
 interface AddCardToDeckRequest {
@@ -180,7 +183,7 @@ router.get('/user/:userId', async (req: Request, res: Response) => {
 })
 
 // Get a specific deck with its cards
-router.get('/:deckId', async (req: Request, res: Response) => {
+router.get('/:deckId', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { deckId } = req.params
 
@@ -197,6 +200,17 @@ router.get('/:deckId', async (req: Request, res: Response) => {
       })
     }
 
+    // Check if user can access this deck (public deck or owner)
+    const isOwner = req.user && deck.userId === req.user.id
+    const canAccess = deck.isPublic || isOwner
+
+    if (!canAccess) {
+      return res.status(404).json({
+        success: false,
+        message: 'Deck not found'
+      })
+    }
+
     // Get deck cards with card details
     const deckCardRepository = AppDataSource.getRepository(DeckCard)
     const deckCards = await deckCardRepository.find({
@@ -205,19 +219,45 @@ router.get('/:deckId', async (req: Request, res: Response) => {
       order: { createdAt: 'ASC' }
     })
 
+    // Group cards by zone for the frontend
+    const cardsByZone = deckCards.reduce((zones: any, dc) => {
+      const zone = dc.zone || 'main'
+      if (!zones[zone]) zones[zone] = []
+      zones[zone].push({
+        id: dc.id,
+        catalogSku: dc.catalogSku,
+        quantity: dc.quantity,
+        zone: dc.zone,
+        name: dc.card?.name,
+        cardName: dc.card?.name,
+        cardId: dc.card?.id,
+        mana_cost: dc.card?.manaCost,
+        card: dc.card,
+        addedAt: dc.createdAt
+      })
+      return zones
+    }, {})
+
     res.json({
       success: true,
       data: {
-        deck: {
-          ...deck,
-          cards: deckCards.map(dc => ({
-            id: dc.id,
-            quantity: dc.quantity,
-            catalogSku: dc.catalogSku,
-            card: dc.card,
-            addedAt: dc.createdAt
-          })),
-          cardCount: deckCards.reduce((sum, dc) => sum + dc.quantity, 0)
+        ...deck,
+        game: deck.game?.code,
+        gameName: deck.game?.displayName,
+        isOwnedByCurrentUser: isOwner,
+        cards: cardsByZone,
+        stats: {
+          totalCards: deckCards.reduce((sum, dc) => sum + dc.quantity, 0),
+          likes: deck.likes,
+          views: deck.views,
+          copies: deck.copies
+        },
+        author: {
+          id: deck.userId,
+          name: 'User' // TODO: Join with user table when available
+        },
+        pricing: {
+          totalValue: parseFloat(deck.totalValue?.toString() || '0')
         }
       }
     })
@@ -232,14 +272,21 @@ router.get('/:deckId', async (req: Request, res: Response) => {
 })
 
 // Create a new deck
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, userId, gameId, formatId }: CreateDeckRequest = req.body
+    const { name, gameId, formatId, description, tags, isPublic }: CreateDeckRequest = req.body
 
-    if (!name || !userId || !gameId) {
+    if (!name || !gameId) {
       return res.status(400).json({
         success: false,
-        message: 'Name, userId, and gameId are required'
+        message: 'Name and gameId are required'
+      })
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'User authentication required'
       })
     }
 
@@ -255,12 +302,14 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const deckRepository = AppDataSource.getRepository(Deck)
-    const deck = deckRepository.create({
-      name: name.trim(),
-      userId,
-      gameId,
-      formatId
-    })
+    const deck = new Deck()
+    deck.name = name.trim()
+    deck.userId = req.user.id
+    deck.gameId = gameId
+    if (formatId) deck.formatId = formatId
+    if (description) deck.description = description
+    if (tags && tags.length > 0) deck.tags = tags
+    deck.isPublic = isPublic || false
 
     const savedDeck = await deckRepository.save(deck)
 
